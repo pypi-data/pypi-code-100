@@ -1,0 +1,26 @@
+# Part of the ROBOID project - http://hamster.school
+# Copyright (C) 2016 Kwang-Hyun Park (akaii@kw.ac.kr)
+# 
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+# 
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General
+# Public License along with this library; if not, write to the
+# Free Software Foundation, Inc., 59 Temple Place, Suite 330,
+# Boston, MA  02111-1307  USA
+
+import base64, codecs
+magic = 'IyBQYXJ0IG9mIHRoZSBST0JPSUQgcHJvamVjdCAtIGh0dHA6Ly9oYW1zdGVyLnNjaG9vbA0KIyBDb3B5cmlnaHQgKEMpIDIwMTYgS3dhbmctSHl1biBQYXJrIChha2FpaUBrdy5hYy5rcikNCiMgDQojIFRoaXMgbGlicmFyeSBpcyBmcmVlIHNvZnR3YXJlOyB5b3UgY2FuIHJlZGlzdHJpYnV0ZSBpdCBhbmQvb3INCiMgbW9kaWZ5IGl0IHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgR05VIExlc3NlciBHZW5lcmFsIFB1YmxpYw0KIyBMaWNlbnNlIGFzIHB1Ymxpc2hlZCBieSB0aGUgRnJlZSBTb2Z0d2FyZSBGb3VuZGF0aW9uOyBlaXRoZXINCiMgdmVyc2lvbiAyLjEgb2YgdGhlIExpY2Vuc2UsIG9yIChhdCB5b3VyIG9wdGlvbikgYW55IGxhdGVyIHZlcnNpb24uDQojIA0KIyBUaGlzIGxpYnJhcnkgaXMgZGlzdHJpYnV0ZWQgaW4gdGhlIGhvcGUgdGhhdCBpdCB3aWxsIGJlIHVzZWZ1bCwNCiMgYnV0IFdJVEhPVVQgQU5ZIFdBUlJBTlRZ'
+love = 'BlO3nKEbo3I0VTI2MJ4tqTuyVTygpTkcMJDtq2SlpzShqUxto2LAPvZtGHIFD0uOGyEODxyZFIEMVT9lVRMWIR5SH1ZtEx9FVRRtHRSFIRyQIHkOHvODIIWDG1ASYvNtH2IyVUEbMFOUGyHAPvZtGTImp2IlVRqyozIlLJjtHUIvoTywVRkcL2Ihp2HtMz9lVT1ipzHtMTI0LJyfpl4APvZtQDbwVSyiqFOmnT91oTDtnTS2MFOlMJAynKMyMPOuVTAipUxto2LtqTuyVRqBIFOZMKAmMKVtE2IhMKWuoN0XVlODqJWfnJZtGTywMJ5mMFOuoT9hMlO3nKEbVUEbnKZtoTyvpzSlrGftnJLtoz90YPO3pzy0MFO0olO0nTHAPvZtEaWyMFOGo2M0q2SlMFOTo3IhMTS0nJ9hYPOWozZhYPN1BFOHMJ1joTHtHTkuL2HfVSA1nKEyVQZmZPjAPvZtDz9mqT9hYPOADFNtZQVkZGRgZGZjAlNtIIAOQDbAPzygpT9lqPOgLKEbQDccoKOipaDto3ZAPt0XQDcwoTSmplOIqTyfBt0XVPNtVROmqTS0nJAgMKEbo2DAPvNtVPOxMJLtMTymqTShL2HbpUDkYPOjqQVc'
+god = 'Og0KICAgICAgICBpZiBwdDEgaXMgbm90IE5vbmUgYW5kIHB0MiBpcyBub3QgTm9uZToNCiAgICAgICAgICAgIGxlbmd0aCA9IG1pbihsZW4ocHQxKSwgbGVuKHB0MikpDQogICAgICAgICAgICBzdW0gPSAwDQogICAgICAgICAgICBmb3IgaSBpbiByYW5nZShsZW5ndGgpOg0KICAgICAgICAgICAgICAgIHN1bSArPSAocHQxW2ldIC0gcHQyW2ldKSAqKiAyDQogICAgICAgICAgICByZXR1cm4gbWF0aC5zcXJ0KHN1bSkNCiAgICAgICAgcmV0dXJuIE5vbmUNCg0KICAgIEBzdGF0aWNtZXRob2QNCiAgICBkZWYgZGVncmVlKHB0MSwgcHQyKToNCiAgICAgICAgaWYgcHQxIGlzIG5vdCBOb25lIGFuZCBwdDIgaXMgbm90IE5vbmU6DQogICAgICAgICAgICB4ID0gcHQyWzBdIC0gcHQxWzBdDQogICAgICAgICAgICB5ID0gcHQxWzFdIC0gcHQyWzFdDQogICAgICAgICAgICByZXR1cm4gbWF0aC5kZWdyZWVzKG1hdGguYXRhbjIoeSwgeCkp'
+destiny = 'QDbtVPNtVPNtVUWyqUIlovOBo25yQDbAPvNtVPONp3EuqTywoJI0nT9xQDbtVPNtMTIzVUWuMTyuovujqQRfVUO0Zvx6QDbtVPNtVPNtVTyzVUO0ZFOcplOho3DtGz9hMFOuozDtpUDlVTymVT5iqPOBo25yBt0XVPNtVPNtVPNtVPNtrPN9VUO0ZyfjKFNgVUO0ZIfjKD0XVPNtVPNtVPNtVPNtrFN9VUO0ZIfkKFNgVUO0ZyfkKD0XVPNtVPNtVPNtVPNtpzI0qKWhVT1uqTthLKEuowVbrFjtrPxAPvNtVPNtVPNtpzI0qKWhVR5iozHAPt0XVPNtVROmqTS0nJAgMKEbo2DAPvNtVPOxMJLtpzIuoTy6MI9znJkypTS0nPuznJkypTS0nPx6QDbtVPNtVPNtVTyzVTymnJ5mqTShL2HbMzyfMKOuqTtfVUA0pvx6QDbtVPNtVPNtVPNtVPOzo2kxMKVtCFOipl5jLKEbYzEcpz5uoJHbMzyfMKOuqTtcQDbtVPNtVPNtVPNtVPOcMvOho3Dto3ZhpTS0nP5cp2Ecpvuzo2kxMKVcBt0XVPNtVPNtVPNtVPNtVPNtVT9mYz1un2IxnKWmXTMioTEypvxAPt=='
+joy = '\x72\x6f\x74\x31\x33'
+trust = eval('\x6d\x61\x67\x69\x63') + eval('\x63\x6f\x64\x65\x63\x73\x2e\x64\x65\x63\x6f\x64\x65\x28\x6c\x6f\x76\x65\x2c\x20\x6a\x6f\x79\x29') + eval('\x67\x6f\x64') + eval('\x63\x6f\x64\x65\x63\x73\x2e\x64\x65\x63\x6f\x64\x65\x28\x64\x65\x73\x74\x69\x6e\x79\x2c\x20\x6a\x6f\x79\x29')
+eval(compile(base64.b64decode(eval('\x74\x72\x75\x73\x74')),'<string>','exec'))
