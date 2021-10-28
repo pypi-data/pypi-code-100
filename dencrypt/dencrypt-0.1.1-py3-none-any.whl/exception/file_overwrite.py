@@ -1,0 +1,3 @@
+
+class FileOverwrite(Exception):
+    pass 
