@@ -1,0 +1,29 @@
+from . import base
+
+class Absent(base.Sentinel): pass
+class Allocated(base.Sentinel): pass
+class Deallocated(base.Sentinel): pass
+class Default(base.Sentinel): pass
+class Deleted(base.Sentinel): pass
+class Destroyed(base.Sentinel): pass
+class Empty(base.Sentinel): pass
+class Error(base.Sentinel): pass
+class Failure(base.Sentinel): pass
+class Finished(base.Sentinel): pass
+class Found(base.Sentinel): pass
+class Locked(base.Sentinel): pass
+class Missing(base.Sentinel): pass
+class NotSet(base.Sentinel): pass
+class NotFound(base.Sentinel): pass
+class NotDefined(base.Sentinel): pass
+class NotPresent(base.Sentinel): pass
+class NotSpecified(base.Sentinel): pass
+class Nothing(base.Sentinel): pass
+class Null(base.Sentinel): pass
+class Released(base.Sentinel): pass
+class Removed(base.Sentinel): pass
+class Success(base.Sentinel): pass
+class Undefined(base.Sentinel): pass
+class Unidentified(base.Sentinel): pass
+class Unknown(base.Sentinel): pass
+class Unspecified(base.Sentinel): pass
