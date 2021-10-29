@@ -1,0 +1,1 @@
+from pyCopeJSON.pyCopeJSON import CopeJSON
