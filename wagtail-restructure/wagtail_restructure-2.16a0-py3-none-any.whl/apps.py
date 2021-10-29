@@ -1,0 +1,20 @@
+from django.apps import AppConfig
+from django.utils.translation import gettext_lazy as _
+
+
+class WagtailAppConfig(AppConfig):
+    name = 'wagtail'
+    label = 'wagtailcore'
+    verbose_name = _("Wagtail core")
+    default_auto_field = 'django.db.models.AutoField'
+    group_viewset = 'wagtail.admin.views.groups.GroupViewSet'
+
+    def ready(self):
+        from wagtail.admin.signal_handlers import \
+            register_signal_handlers as register_admin_signal_handlers
+        from wagtail.signal_handlers import register_signal_handlers
+
+        register_signal_handlers()
+        register_admin_signal_handlers()
+
+        from wagtail import widget_adapters  # noqa
