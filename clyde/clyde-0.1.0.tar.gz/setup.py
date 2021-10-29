@@ -1,0 +1,30 @@
+# -*- coding: utf-8 -*-
+from setuptools import setup
+
+packages = \
+['clyde']
+
+package_data = \
+{'': ['*']}
+
+install_requires = \
+['attrs>=21.1.0,<22.0.0', 'httpx>=0.18.1,<0.19.0', 'pydantic>=1.8.1,<2.0.0']
+
+setup_kwargs = {
+    'name': 'clyde',
+    'version': '0.1.0',
+    'description': '',
+    'long_description': None,
+    'author': 'Tom Bulled',
+    'author_email': '26026015+tombulled@users.noreply.github.com',
+    'maintainer': None,
+    'maintainer_email': None,
+    'url': None,
+    'packages': packages,
+    'package_data': package_data,
+    'install_requires': install_requires,
+    'python_requires': '>=3.8,<4.0',
+}
+
+
+setup(**setup_kwargs)
