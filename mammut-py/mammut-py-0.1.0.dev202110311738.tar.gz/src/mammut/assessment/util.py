@@ -1,0 +1,21 @@
+"""
+    Spreadsheet cells coordinates for dataframe reading.
+"""
+DEFAULT_START_CELL = "A1"
+DEFAULT_START_COLUMN = "A"
+DEFAULT_START_ROW = "1"
+DEFAULT_END_CELL = "J"
+
+"""
+    Columns name for spreadsheet specification
+"""
+COURSE_ID_COLUMN = "course_id"
+ASSESSMENT_ID_COLUMN = "assessment_id"
+SCHEDULE_COLUMN = "schedule"
+PROBLEM_ID_COLUMN = "problem_id"
+PROBLEM_TYPE_COLUMN = "problem_type"
+PARAMETERS_COLUMN = "parameters"
+LANGUAGE_COMPETENCE_COLUMN = "language_competence"
+WEIGHT_COLUMN = "weight"
+RETRY_COLUMN = "retry"
+OBSERVATIONS_COLUMN = "observations"
