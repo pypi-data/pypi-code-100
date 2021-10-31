@@ -1,0 +1,13 @@
+"""
+    Course utilities constants
+"""
+ID_COLUMN = "id"
+ACADEMIC_PERIOD_COLUMN = "academic_period"
+PREREQUISITE_COLUMN = "prerequisites"
+LANGUAGE_LEVEL_COLUMN = "language_level"
+COURSE_NAME_COLUMN = "course_name"
+REGIONAL_SETTINGS_COLUMN = "regional_settings"
+HIDDEN_COLUMN = "hidden"
+OBSERVATIONS_COLUMN = "observations"
+APPROVAL_CRITERIA_COLUMN = "approval_criteria"
+RETRY_COLUMN = "retry"
