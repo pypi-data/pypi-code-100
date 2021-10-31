@@ -1,0 +1,11 @@
+guildText = 0
+dm = 1
+guildVoice = 2
+groupDM = 3
+guildCategory = 4
+guildNews = 5
+guildStore = 6
+guildNewsThread = 10
+guildPublicThread = 11
+guildPrivateThread = 12
+guildStageVoice = 13
