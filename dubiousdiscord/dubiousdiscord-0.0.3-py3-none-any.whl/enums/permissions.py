@@ -1,0 +1,42 @@
+
+# https://discord.com/developers/docs/topics/permissions#permissions-bitwise-permission-flags
+
+createInstantInvite = 1 << 0
+kickMembers = 1 << 1
+banMembers = 1 << 2
+administrator = 1 << 3
+manage_channels = 1 << 4
+manage_guild = 1 << 5
+addReactions = 1 << 6
+viewAuditLog = 1 << 7
+prioritySpeaker = 1 << 8
+stream = 1 << 9
+viewChannel = 1 << 10
+sendMessages = 1 << 11
+sendTTSMessages = 1 << 12
+manageMessages = 1 << 13
+embedLinks = 1 << 14
+attachFiles = 1 << 15
+readMessageHistory = 1 << 16
+mentionEveryone = 1 << 17
+useExternalEmojis = 1 << 18
+viewGuildInsights = 1 << 19
+connect = 1 << 20
+speak = 1 << 21
+muteMembers = 1 << 22
+deafenMembers = 1 << 23
+moveMembers = 1 << 24
+useVAD = 1 << 25
+changeNickname = 1 << 26
+manageNicknames = 1 << 27
+manageRoles = 1 << 28
+manageWebhooks = 1 << 29
+manageEmojisAndStickers = 1 << 30
+useApplicationCommands = 1 << 31
+requestToSpeak = 1 << 32
+manageThreads = 1 << 34
+createPublicThreads = 1 << 35
+createPrivateThreads = 1 << 36
+useExternalStickers = 1 << 37
+sendMessagesInThreads = 1 << 38
+startEmbeddedActivities = 1 << 39
