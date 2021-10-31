@@ -1,0 +1,2 @@
+class SheetEndError(EOFError):
+    pass
