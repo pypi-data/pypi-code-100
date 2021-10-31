@@ -1,0 +1,2 @@
+class CharacterId(str):
+    pass
