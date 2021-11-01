@@ -1,0 +1,2 @@
+def dogreet():
+    print("hello")
