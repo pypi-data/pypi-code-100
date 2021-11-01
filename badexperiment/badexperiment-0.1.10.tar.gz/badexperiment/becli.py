@@ -1,0 +1,28 @@
+import click
+import badexperiment as be
+
+
+@click.command()
+@click.option('--count', default=1, help='Number of greetings.')
+@click.option('--name', prompt='Your name',
+              help='The person to greet.')
+def hello(count, name):
+    """Simple program that greets NAME for a total of COUNT times."""
+    for x in range(count):
+        click.echo(f"Hello {name}!")
+
+    my_iot_glassary_frame = be.get_iot_glassary_frame()
+    print(my_iot_glassary_frame)
+
+    # my_slot_to_pack = get_slot_to_pack(my_iot_glassary_frame)
+    # # print(slot_to_pack)
+    # my_iot_packages = get_iot_packages(my_slot_to_pack)
+    # # print(iot_packages)
+    # coalesced_package_names = coalesce_package_names(my_slot_to_pack)
+    # # print(coalesced_package_names)
+    # isolated_slot_to_package = get_pack_to_slot(coalesced_package_names, my_iot_packages)
+    # print(isolated_slot_to_package)
+
+
+if __name__ == '__main__':
+    hello()
