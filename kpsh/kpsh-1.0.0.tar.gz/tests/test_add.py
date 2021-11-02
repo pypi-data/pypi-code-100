@@ -1,0 +1,109 @@
+import os
+import string
+
+import pytest
+
+from kpsh.commands import CommandError
+
+
+@pytest.fixture
+def kpbig(kp_factory):
+    return kp_factory("db_argon2_kdbx4_pass_big.kdbx", password="foobar")
+
+
+def test_add_dont_override_existing_entry(kpbig, th):
+    with pytest.raises(CommandError):
+        th.cmd(f"add foo", kpbig.kp, kpbig.ioh)
+
+
+@pytest.mark.parametrize("path", ["newentry", "group/newentry", "newgroup/entry"])
+def test_add_username_password(kpbig, th, path):
+    user = "myuser"
+    pwd = "mypass"
+    th.cmd(f"add {path} --username {user} --password {pwd}", kpbig.kp, kpbig.ioh)
+    th.assert_fields(kpbig.kp, path, username=user, password=pwd)
+
+
+def test_add_password_interactively(kpbig, th):
+    kpbig.ioh.prompt.return_value = "newentry_password"
+    th.cmd(f"add newentry", kpbig.kp, kpbig.ioh)
+    th.assert_fields(kpbig.kp, "newentry", username="", password="newentry_password")
+
+
+def test_add_generate_password(kpbig, th):
+    th.cmd(f"add newentry --pw-gen -l 32", kpbig.kp, kpbig.ioh)
+    fields = th.fields("newentry", kpbig.kp)
+    assert fields
+    assert len(fields["password"]) == 32
+
+
+@pytest.mark.parametrize(
+    "arg,chset",
+    [
+        ("--letters", string.ascii_letters),
+        ("--digits", string.digits),
+        ("--punctuation", string.punctuation),
+        ("--characters abc", ["a", "b", "c"]),
+    ],
+)
+def test_add_generate_password_character_sets(kpbig, th, arg, chset):
+    th.cmd(f"add newentry --pw-gen -l 100 {arg}", kpbig.kp, kpbig.ioh)
+
+    fields = th.fields("newentry", kpbig.kp)
+    assert fields
+    assert len(fields["password"]) == 100
+
+    for ch in fields["password"]:
+        assert (
+            ch in chset
+        ), f"'{ch}' is in set of letters allowed for generated password"
+
+
+def test_add_notes(kpbig, th):
+    pwd = "pwd"
+    th.cmd(
+        f"add newentry -p {pwd} --note 'note 1' --note 'note 2'", kpbig.kp, kpbig.ioh
+    )
+    th.assert_fields(
+        kpbig.kp, "newentry", username="", password=pwd, notes=["note 1", "note 2"]
+    )
+
+
+def test_add_simple_fields(kpbig, th):
+    pwd = "pwd"
+    th.cmd(
+        f"add newentry -p {pwd} --url https://example.com --autotype-sequence {{TAB}}",
+        kpbig.kp,
+        kpbig.ioh,
+    )
+    th.assert_fields(
+        kpbig.kp,
+        "newentry",
+        username="",
+        password=pwd,
+        url="https://example.com",
+        autotype_sequence="{TAB}",
+    )
+
+
+def test_add_detect_file_modification(kpbig, th, kp_open):
+    def modify_db_and_answer_password(text, is_password):
+        assert is_password is True
+        db = kpbig.args.db
+        curr = os.stat(db)
+        os.utime(db, (curr.st_atime, curr.st_mtime + 100))
+        return "pwd"
+
+    kpbig.ioh.prompt.side_effect = modify_db_and_answer_password
+    th.cmd(f"add newentry", kpbig.kp, kpbig.ioh)
+
+    assert kpbig.kp.db != kpbig.args.db
+    assert os.path.exists(kpbig.args.db)
+    assert os.path.exists(kpbig.kp.db)
+
+    oldkp = kp_open(kpbig.args.db, password="foobar")
+    assert th.fields("newentry", oldkp.kp) is None
+
+    newkp_fields = th.fields("newentry", kpbig.kp)
+    assert newkp_fields
+    assert newkp_fields["password"] == "pwd"
