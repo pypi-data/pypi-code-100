@@ -1,0 +1,1 @@
+BASE_URL = 'https://api.brickowl.com/v1'
