@@ -1,0 +1,33 @@
+from setuptools import setup
+
+setup(
+	name='cubacrypt',  
+	version='1.2',
+	repository="https://github.com/Senarc-Studios/CubaCrypt",
+	scripts=['cubacrypt'] ,
+	author="BenitzCoding",
+	author_email="benitzcoding@senarc.org",
+	description="An custom encryption method made by encrypting with many types Number systems and characters.",
+	url="https://github.com/Senarc-Studios/CubaCrypt",
+	packages=['cubacrypt'],
+	classifiers=[
+		'Topic :: Security :: Cryptography',
+		'Topic :: Security',
+		'Topic :: Database',
+		'Environment :: Web Environment',
+		'Development Status :: 5 - Production/Stable',
+		"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        'Intended Audience :: Developers',
+        'Natural Language :: English',
+        'Operating System :: OS Independent',
+		"Programming Language :: Python :: 3",
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Topic :: Internet',
+        'Topic :: Software Development :: Libraries',
+        'Topic :: Software Development :: Libraries :: Python Modules',
+        'Topic :: Utilities',
+	],
+	include_package_data=True,
+	install_requires=["pymongo", "dnspython"],
+)
