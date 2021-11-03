@@ -1,0 +1,1 @@
+from dsomit.dsomit import omit
