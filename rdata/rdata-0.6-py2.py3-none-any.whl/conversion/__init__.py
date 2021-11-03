@@ -1,0 +1,17 @@
+from ._conversion import (
+    DEFAULT_CLASS_MAP,
+    Converter,
+    RExpression,
+    RLanguage,
+    SimpleConverter,
+    convert,
+    convert_array,
+    convert_attrs,
+    convert_char,
+    convert_list,
+    convert_symbol,
+    convert_vector,
+    dataframe_constructor,
+    factor_constructor,
+    ts_constructor,
+)
