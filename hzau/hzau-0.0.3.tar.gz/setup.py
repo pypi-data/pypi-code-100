@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+from setuptools import setup
+
+setup(
+    name='hzau',
+    version='0.0.3',
+    author='Chang-LeHung',
+    author_email='chang-lehung@gmail.com',
+    url='https://github/Chang-LeHung',
+    description=u'utis',
+    packages=['hzau'],
+    install_requires=['torch', 'matplotlib', 'numpy', 'seaborn',
+                      'torchvision', 'IPython', 'matplotlib_inline']
+)
