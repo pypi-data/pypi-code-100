@@ -1,0 +1,130 @@
+# -*- coding: utf-8 -*-
+from setuptools import setup
+
+package_dir = \
+{'': 'src'}
+
+packages = \
+['fastoad',
+ 'fastoad._utils',
+ 'fastoad._utils.resource_management',
+ 'fastoad.cmd',
+ 'fastoad.cmd.resources',
+ 'fastoad.gui',
+ 'fastoad.io',
+ 'fastoad.io.configuration',
+ 'fastoad.io.configuration.resources',
+ 'fastoad.io.xml',
+ 'fastoad.io.xml.resources',
+ 'fastoad.model_base',
+ 'fastoad.models',
+ 'fastoad.models.aerodynamics',
+ 'fastoad.models.aerodynamics.components',
+ 'fastoad.models.aerodynamics.components.resources',
+ 'fastoad.models.aerodynamics.components.utils',
+ 'fastoad.models.aerodynamics.external',
+ 'fastoad.models.aerodynamics.external.xfoil',
+ 'fastoad.models.aerodynamics.external.xfoil.resources',
+ 'fastoad.models.aerodynamics.external.xfoil.xfoil699',
+ 'fastoad.models.geometry',
+ 'fastoad.models.geometry.geom_components',
+ 'fastoad.models.geometry.geom_components.fuselage',
+ 'fastoad.models.geometry.geom_components.ht',
+ 'fastoad.models.geometry.geom_components.ht.components',
+ 'fastoad.models.geometry.geom_components.nacelle_pylons',
+ 'fastoad.models.geometry.geom_components.vt',
+ 'fastoad.models.geometry.geom_components.vt.components',
+ 'fastoad.models.geometry.geom_components.wing',
+ 'fastoad.models.geometry.geom_components.wing.components',
+ 'fastoad.models.geometry.profiles',
+ 'fastoad.models.geometry.profiles.resources',
+ 'fastoad.models.handling_qualities',
+ 'fastoad.models.handling_qualities.tail_sizing',
+ 'fastoad.models.loops',
+ 'fastoad.models.performances',
+ 'fastoad.models.performances.mission',
+ 'fastoad.models.performances.mission.mission_definition',
+ 'fastoad.models.performances.mission.mission_definition.resources',
+ 'fastoad.models.performances.mission.openmdao',
+ 'fastoad.models.performances.mission.openmdao.resources',
+ 'fastoad.models.performances.mission.segments',
+ 'fastoad.models.propulsion',
+ 'fastoad.models.propulsion.fuel_propulsion',
+ 'fastoad.models.propulsion.fuel_propulsion.rubber_engine',
+ 'fastoad.models.weight',
+ 'fastoad.models.weight.cg',
+ 'fastoad.models.weight.cg.cg_components',
+ 'fastoad.models.weight.cg.cg_components.load_cases',
+ 'fastoad.models.weight.mass_breakdown',
+ 'fastoad.models.weight.mass_breakdown.a_airframe',
+ 'fastoad.models.weight.mass_breakdown.b_propulsion',
+ 'fastoad.models.weight.mass_breakdown.c_systems',
+ 'fastoad.models.weight.mass_breakdown.d_furniture',
+ 'fastoad.models.weight.mass_breakdown.e_crew',
+ 'fastoad.module_management',
+ 'fastoad.notebooks',
+ 'fastoad.notebooks.01_tutorial',
+ 'fastoad.notebooks.01_tutorial.data',
+ 'fastoad.notebooks.01_tutorial.img',
+ 'fastoad.notebooks.02_CeRAS_case_study',
+ 'fastoad.notebooks.02_CeRAS_case_study.data',
+ 'fastoad.notebooks.02_CeRAS_case_study.img',
+ 'fastoad.notebooks.03_custom_modules',
+ 'fastoad.notebooks.03_custom_modules.data',
+ 'fastoad.notebooks.03_custom_modules.img',
+ 'fastoad.notebooks.03_custom_modules.modules',
+ 'fastoad.openmdao',
+ 'fastoad.openmdao.resources']
+
+package_data = \
+{'': ['*']}
+
+install_requires = \
+['aenum>=3.1.0,<4.0.0',
+ 'ensure>=1.0.0,<2.0.0',
+ 'ipopo>=1.0.0,<2.0.0',
+ 'ipysheet>=0.4.0,<0.5.0',
+ 'ipywidgets>=7.3.0,<8.0.0',
+ 'jsonschema>=3.2.0,<4.0.0',
+ 'jupyter-client!=7.0.0,!=7.0.1,!=7.0.2,!=7.0.3,!=7.0.4,!=7.0.5',
+ 'lxml>=4.6.3,<5.0.0',
+ 'matplotlib>=3.1.2,<4.0.0',
+ 'numpy>=1.17.3,<2.0.0',
+ 'openmdao>=3.10,<4.0',
+ 'pandas>=1.1.0,<2.0.0',
+ 'plotly>=4.5.0,<5.0.0',
+ 'ruamel.yaml>=0.15.78,<0.18',
+ 'scipy>=1.3.2,<2.0.0',
+ 'tabulate>=0.8.9,<0.9.0',
+ 'tomlkit>=0.5.3,<1',
+ 'wop>=1.13.1,<2.0.0']
+
+extras_require = \
+{'jupyterlab': ['jupyterlab>=2,<3']}
+
+entry_points = \
+{'console_scripts': ['fast-oad = fastoad.cmd.fast:main',
+                     'fastoad = fastoad.cmd.fast:main'],
+ 'fastoad_model': ['internal_models = fastoad.models']}
+
+setup_kwargs = {
+    'name': 'fast-oad',
+    'version': '1.1.1',
+    'description': 'FAST-OAD is a framework for performing rapid Overall Aircraft Design',
+    'long_description': '![Tests](https://github.com/fast-aircraft-design/FAST-OAD/workflows/Tests/badge.svg)\n[![Documentation Status](https://readthedocs.org/projects/fast-oad/badge/?version=latest)](https://fast-oad.readthedocs.io/en/latest/?badge=latest)\n\n[![Codacy Badge](https://app.codacy.com/project/badge/Grade/9691f1d1430c45cf9c94bc342b4c6122)](https://www.codacy.com/gh/fast-aircraft-design/FAST-OAD?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=fast-aircraft-design/FAST-OAD&amp;utm_campaign=Badge_Grade)\n[![codecov](https://codecov.io/gh/fast-aircraft-design/FAST-OAD/branch/master/graph/badge.svg)](https://codecov.io/gh/fast-aircraft-design/FAST-OAD)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\n\n[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)\n\n[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fast-aircraft-design/FAST-OAD.git/latest-release?urlpath=lab%2Ftree%2Fsrc%2Ffastoad%2Fnotebooks)\n\n\nFAST-OAD: Future Aircraft Sizing Tool - Overall Aircraft Design\n===============================================================\n\nFAST-OAD is a framework for performing rapid Overall Aircraft Design.\n\nIt proposes multi-disciplinary analysis and optimisation by relying on\nthe [OpenMDAO framework](https://openmdao.org/).\n\nFAST-OAD allows easy switching between models for a same discipline, and\nalso adding/removing disciplines to match the need of your study.\n\nCurrently, FAST-OAD is bundled with models for commercial transport\naircraft of years 1990-2000. Other models will come, and you may create\nyour own models and use them instead of bundled ones.\n\nMore details can be found in the [official\ndocumentation](https://fast-oad.readthedocs.io/).\n\n>**_Note_**:\n>\n> Since version 1.0, FAST-OAD aims at providing a stable core software to \n> propose a safe base for development of custom models.\n>\n> Models in FAST-OAD are still a work in progress.\n\n\nWant to try quickly?\n--------------------\nYou can run FAST-OAD tutorials **without installation** using our\n[Binder-hosted Jupyter notebooks](https://mybinder.org/v2/gh/fast-aircraft-design/FAST-OAD.git/latest-release?filepath=src%2Ffastoad%2Fnotebooks).\n\n\nInstall\n-------\n\n**Prerequisite**:FAST-OAD needs at least **Python 3.7.0**.\n\nIt is recommended (but not required) to install FAST-OAD in a virtual\nenvironment ([conda](https://docs.conda.io/en/latest/),\n[venv](https://docs.python.org/3.7/library/venv.html), ...)\n\nOnce Python is installed, FAST-OAD can be installed using pip.\n\n> **Note**: If your network uses a proxy, you may have to do [some\n> settings](https://pip.pypa.io/en/stable/user_guide/#using-a-proxy-server)\n> for pip to work correctly\n\nYou can install the latest version with this command:\n\n``` {.bash}\n$ pip install --upgrade fast-oad\n```\n',
+    'author': 'Christophe DAVID',
+    'author_email': 'christophe.david@onera.fr',
+    'maintainer': None,
+    'maintainer_email': None,
+    'url': 'https://github.com/fast-aircraft-design/FAST-OAD',
+    'package_dir': package_dir,
+    'packages': packages,
+    'package_data': package_data,
+    'install_requires': install_requires,
+    'extras_require': extras_require,
+    'entry_points': entry_points,
+    'python_requires': '>=3.7,<4.0',
+}
+
+
+setup(**setup_kwargs)
