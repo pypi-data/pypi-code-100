@@ -1,0 +1,17 @@
+# Copyright (C) 2018 SignalFx. All rights reserved.
+import pytest
+
+from signalfx_tracing.libraries.requests_.instrument import config, uninstrument
+
+
+class LoggingTestSuite(object):
+    @pytest.fixture(autouse=True)
+    def restored_logging_config(self):
+        orig = dict(config.__dict__)
+        yield
+        config.__dict__ = orig
+
+    @pytest.fixture(autouse=True)
+    def uninstrument_logging(self):
+        yield
+        uninstrument()
