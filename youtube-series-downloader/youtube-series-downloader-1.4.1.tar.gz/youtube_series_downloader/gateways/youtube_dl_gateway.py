@@ -1,0 +1,35 @@
+from pathlib import Path
+from tempfile import gettempdir
+from typing import Optional
+
+from tealprint.tealprint import TealLevel
+from youtube_dl import YoutubeDL
+from youtube_series_downloader.config import config
+from youtube_series_downloader.core.video import Video
+
+
+class YoutubeDlGateway:
+    @staticmethod
+    def download(video: Video) -> Optional[Path]:
+        out_file = Path(gettempdir(), f"{video.id}.mkv")
+
+        if config.pretend:
+            return out_file
+
+        quiet = config.level.value >= TealLevel.verbose.value
+        no_warnings = config.level.value >= TealLevel.warning.value
+        verbose = config.level.value >= TealLevel.debug.value
+
+        ydl_opts = {
+            "outtmpl": str(out_file),
+            "quiet": quiet,
+            "verbose": verbose,
+            "no_warnings": no_warnings,
+            "merge_output_format": "mkv",
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            return_code = ydl.download([video.id])
+            if return_code == 0:
+                return out_file
+
+        return None
