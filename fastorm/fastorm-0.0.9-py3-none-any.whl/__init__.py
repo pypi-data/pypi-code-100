@@ -1,0 +1,1736 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""FastORM framework, easy to learn, fast to code"""
+__author__ = 'luckydonald'
+__version__ = "0.0.9"
+__all__ = ['__author__', '__version__', 'FastORM', 'Autoincrement']
+
+import ipaddress
+import builtins
+import datetime
+import asyncpg
+import decimal
+import typing
+import types
+import uuid
+import re
+from typing import List, Dict, Any, Optional, Tuple, Type, get_type_hints, Union, TypeVar, Callable
+from asyncpg import Connection, Pool
+
+try:
+    import psycopg2
+    import psycopg2.sql
+    import psycopg2.extensions
+except (ImportError, ModuleNotFoundError):
+    psycopg2 = None
+# end try
+
+from luckydonaldUtils.exceptions import assert_type_or_raise
+from luckydonaldUtils.logger import logging
+from luckydonaldUtils.typing import JSONType
+
+from pydantic import BaseModel
+from pydantic.fields import ModelField, UndefinedType, Undefined, Field, PrivateAttr
+from pydantic.typing import NoArgAnyCallable
+from typeguard import check_type
+
+from .classes import FieldInfo, FieldItem
+from .compat import check_is_union_type, TYPEHINT_TYPE, check_is_generic_alias, check_is_annotated_type
+from .compat import Annotated, NoneType
+
+
+VERBOSE_SQL_LOG = True
+SQL_DO_NOTHING = "SELECT 1;"
+
+CLS_TYPE = TypeVar("CLS_TYPE")
+
+
+logger = logging.getLogger(__name__)
+if __name__ == '__main__':
+    logging.add_colored_handler(level=logging.DEBUG)
+# end if
+
+
+class FastORM(BaseModel):
+    _table_name: str  # database table name we run queries against
+    _ignored_fields: List[str]  # fields which never are intended for the database and will be excluded in every operation. (So are all fields starting with an underscore)
+    _automatic_fields: List[str]  # fields the database fills in, so we will ignore them on INSERT.
+    _primary_keys: List[str]  # this is how we identify ourself.
+    _database_cache: Dict[str, JSONType] = PrivateAttr()  # stores the last known retrieval, so we can run UPDATES after you changed parameters.
+    __selectable_fields: List[str] = PrivateAttr()  # cache for `cls.get_sql_fields()`
+    __fields_typehints: Dict[bool, Dict[str, FieldInfo[ModelField]]] = PrivateAttr()  # cache for `cls.get_fields_typehint()`
+    __fields_references: Dict[bool, Dict[str, FieldInfo[ModelField]]] = PrivateAttr()  # cache for `cls.get_fields_typehint()`
+
+    def __init__(self, **data: Any):
+        super().__init__(**data)
+        self._database_cache: Dict[str, Any] = {}
+    # end def
+
+    def _database_cache_overwrite_with_current(self):
+        """
+        Resets the database cache from the current existing fields.
+        This is used just after something is loaded from a database row.
+        :return:
+        """
+        self._database_cache = {}
+        for field in self.get_fields():
+            self._database_cache[field] = getattr(self, field)
+        # end if
+
+    def _database_cache_remove(self):
+        """
+        Removes the database cache completely.
+        This is used after deleting an entry.
+        :return:
+        """
+        self._database_cache = {}
+    # end def
+
+    def as_dict(self) -> Dict[str, JSONType]:
+        return self.dict()
+    # end def
+
+    @classmethod
+    def get_fields_typehints(cls, *, flatten_table_references: bool = False) -> Dict[str, FieldInfo[ModelField]]:
+        """
+        Get's all fields which have type hints and thus we consider as fields for the database.
+        Filters out constants (all upper case, like `CAPSLOCK_VARIABLE`) and hidden fields (starting with `_`).
+
+        :param flatten_table_references:
+                True if we should flatten the references to other table's primary key in the format of `f"{original_key}__{other_table_key}`.
+                False to not resolve those fields, and instead return the type hint for the other FastORM class.
+        :return: the dictionary with pydantic's ModelField descriptions.
+
+        Example:
+
+            >>> class OtherTable(FastORM):
+            ...     _table_name = 'other_table'
+            ...     _primary_keys = ['id_part_1', 'id_part_2']
+            ...
+            ...     id_part_1: int
+            ...     id_part_2: str
+            ... # end class
+            ...
+
+            >>> class ActualTable(FastORM):
+            ...     _table_name = 'actual_table'
+            ...     _primary_keys = ['cool_reference']
+            ...     cool_reference: OtherTable
+            ...
+
+            >>> ActualTable.get_fields_typehints(flatten_table_references=False)
+            {'cool_reference': FieldInfo(is_primary_key=True, types=[FieldItem(field='cool_reference', type_=ModelField(name='cool_reference', type=OtherTable, required=True))])}
+
+
+            >>> ActualTable.get_fields_typehints(flatten_table_references=True)
+            {'cool_reference__id_part_1': FieldInfo(is_primary_key=True, types=[FieldItem(field='cool_reference', type_=ModelField(name='cool_reference', type=OtherTable, required=True)), FieldItem(field='id_part_1', type_=ModelField(name='id_part_1', type=int, required=True))]), 'cool_reference__id_part_2': FieldInfo(is_primary_key=True, types=[FieldItem(field='cool_reference', type_=ModelField(name='cool_reference', type=OtherTable, required=True)), FieldItem(field='id_part_2', type_=ModelField(name='id_part_2', type=str, required=True))])}
+
+        """
+        # first look if we have this cached. That would be way faster.
+        cache_key = f'_{cls.__name__!s}__fields_typehints'
+        cached_value = getattr(cls, cache_key, {})
+        # it is a dict, where the boolean key is the `flatten_table_references` parameter.
+        if cached_value.get(flatten_table_references) is not None:
+            return cached_value[flatten_table_references]
+        # end if
+
+        # we don't have a cached value and need to calculate it all.
+        # that's fair, let's do it.
+
+        _ignored_fields = cls.get_ignored_fields()
+        references = cls.get_fields_references(recursive=flatten_table_references)
+
+        # prepare the array with all the classes we wanna have typehints for.
+        classes_typehints: Dict[Type, Dict[str, ModelField]] = {
+            cls: {},
+        }
+        for long_key, field_reference in references.items():
+            for interesting_type in field_reference.types[:-1]:  # the last one always is a native type (int, str, …), so not interesting
+                classes_typehints[interesting_type.type_] = {}
+            # end for
+        # end for
+
+        # now actually fill in type hints to that lookup table.
+        for interesting_cls in classes_typehints.keys():
+            interesting_cls: Type[FastORM]
+            assert issubclass(interesting_cls, FastORM)
+            type_hints: Dict[str, ModelField] = {
+                key: value for key, value in interesting_cls.__fields__.items()
+                if (
+                    not key.startswith('_')
+                    and not key.isupper()
+                    and key not in _ignored_fields
+                )
+            }
+            classes_typehints[interesting_cls] = type_hints
+        # end for
+
+        # now go through the references and apply the type hints
+        result_hints: Dict[str, FieldInfo[ModelField]] = {}
+        for long_key, field_reference in references.items():
+            last_class = cls
+            final_hint = FieldInfo(is_primary_key=field_reference.is_primary_key, types=[])
+            for field_item in field_reference.types:
+                type_hint = classes_typehints[last_class][field_item.field]
+                if isinstance(type_hint.outer_type_, typing.ForwardRef):
+                    # The .type_ of a resolved ForwardRef seems alright, only the Optional[…] wrapping goes poof.
+                    # We parse the inner resolved .type_ as a new hint (supplying Optional[…] where needed),
+                    # and if the inner parsed .type_ still matches, we replace the current type hint by this new one.
+                    new_type_hint = ModelField(
+                        name=type_hint.name,
+                        type_=type_hint.type_ if type_hint.allow_none else Optional[type_hint.type_],
+                        model_config=type_hint.model_config,
+                        default=type_hint.default,
+                        default_factory=type_hint.default_factory,
+                        required=type_hint.required,
+                        alias=type_hint.alias,
+                        field_info=type_hint.field_info,
+                        class_validators=type_hint.class_validators,
+                    )
+                    if (
+                        new_type_hint.type_ == type_hint.type_ and
+                        new_type_hint.required == type_hint.required and
+                        new_type_hint.outer_type_ != type_hint.outer_type_ and
+                        True
+                    ):
+                        type_hint = new_type_hint
+                    else:
+                        raise AssertionError('O_O this should not happen')
+                    # end if
+                # end if
+                final_hint.types.append(FieldItem(field=field_item.field, type_=type_hint))
+                last_class = field_item.type_
+            # end for
+            result_hints[long_key] = final_hint
+        # end for
+        cached_value[flatten_table_references] = result_hints
+        setattr(cls, cache_key, cached_value)
+        return result_hints
+    # end def
+
+    _GET_FIELDS_REFERENCES_TYPE = Dict[str, FieldInfo[typing.Union[type, typing.Type['FastORM']]]]
+
+    @classmethod
+    def get_fields_references(cls, *, recursive: bool = False) -> _GET_FIELDS_REFERENCES_TYPE:
+        """
+        Get's all fields which have type hints and thus we consider as fields for the database.
+        Filters out constants (all upper case, like `CAPSLOCK_VARIABLE`) and hidden fields (starting with `_`).
+        Then
+
+        :param recursive: If we should not only take into account the current layer, but add the primary keys of the referenced tables to it as well, in the format `f"{our_key}__{referenced_primary_key}`.
+        :return: the dictionary with the
+
+        Example:
+
+            >>> class OtherTable(FastORM):
+            ...     _table_name = 'other_table'
+            ...     _primary_keys = ['id_part_1', 'id_part_2']
+            ...
+            ...     id_part_1: int
+            ...     id_part_2: str
+            ... # end class
+            ...
+
+            >>> class ActualTable(FastORM):
+            ...     _table_name = 'actual_table'
+            ...     _primary_keys = ['cool_reference']
+            ...     cool_reference: OtherTable
+            ...     foobar: int
+            ...
+
+            >>> class ThirdTable(FastORM):
+            ...     _table_name = 'third_table'
+            ...     _primary_keys = ['id']
+            ...     id: int
+            ...     reference_to_other_table: OtherTable
+            ...     reference_to_actual_table: ActualTable
+            ...
+
+            >>> class TableWithIdAndRefPK(FastORM):
+            ...     _table_name = 'mayhem_group_tables'
+            ...     _primary_keys = ['id', 'reference']
+            ...     _automatic_fields = ['id']
+            ...     id: int
+            ...     reference: OtherTable
+            ...
+
+            >>> class TableWithIdAndRefPK(FastORM):
+            ...     _table_name = 'mayhem_group_tables'
+            ...     _primary_keys = ['id', 'reference']
+            ...     _automatic_fields = ['id']
+            ...     reference: OtherTable
+            ...
+
+
+            >>> ActualTable.get_fields_references(recursive=False)
+            {'cool_reference': FieldInfo(is_primary_key=True, types=[FieldItem(field='cool_reference', type_=<class 'fastorm.OtherTable'>)]), 'foobar': FieldInfo(is_primary_key=False, types=[FieldItem(field='foobar', type_=<class 'int'>)])}
+
+            >>> ThirdTable.get_fields_references(recursive=False)
+            {'id': FieldInfo(is_primary_key=True, types=[FieldItem(field='id', type_=<class 'int'>)]), 'reference_to_other_table': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_other_table', type_=<class 'fastorm.OtherTable'>)]), 'reference_to_actual_table': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_actual_table', type_=<class 'fastorm.ActualTable'>)])}
+
+            >>> ThirdTable.get_fields_references(recursive=True)
+            {'id': FieldInfo(is_primary_key=True, types=[FieldItem(field='id', type_=<class 'int'>)]), 'reference_to_other_table__id_part_1': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_other_table', type_=<class 'fastorm.OtherTable'>), FieldItem(field='id_part_1', type_=<class 'int'>)]), 'reference_to_other_table__id_part_2': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_other_table', type_=<class 'fastorm.OtherTable'>), FieldItem(field='id_part_2', type_=<class 'str'>)]), 'reference_to_actual_table__cool_reference__id_part_1': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_actual_table', type_=<class 'fastorm.ActualTable'>), FieldItem(field='cool_reference', type_=<class 'fastorm.OtherTable'>), FieldItem(field='id_part_1', type_=<class 'int'>)]), 'reference_to_actual_table__cool_reference__id_part_2': FieldInfo(is_primary_key=False, types=[FieldItem(field='reference_to_actual_table', type_=<class 'fastorm.ActualTable'>), FieldItem(field='cool_reference', type_=<class 'fastorm.OtherTable'>), FieldItem(field='id_part_2', type_=<class 'str'>)])}
+
+        """
+        # first look if we have this cached. That would be way faster.
+        cache_key = f'_{cls.__name__!s}__fields_references'
+        cached_value = getattr(cls, cache_key, {})
+        # it is a dict, where the boolean key is the `recursive` parameter.
+        if cached_value.get(recursive) is not None:
+            return cached_value[recursive]
+        # end if
+
+        # we don't have a cached value and need to calculate it all.
+        # that's fair, let's do it.
+
+        _ignored_fields = cls.get_ignored_fields()
+        _primary_keys = cls.get_primary_keys_keys()
+        # copy the type hints as we might add more type hints for the primary key fields of referenced models, and we wanna filter.
+        type_hints = {
+            key: value for key, value in cls.__fields__.items()
+            if (
+                not key.startswith('_')
+                and not key.isupper()
+                and key not in _ignored_fields
+            )
+        }
+        return_val: FastORM._GET_FIELDS_REFERENCES_TYPE = {}
+        for key, value in type_hints.items():
+            type_hint = type_hints[key]
+            inner_type = type_hint.type_
+            other_class: Union[Type[FastORM], None] = None
+            if (
+                check_is_generic_alias(inner_type) and
+                hasattr(inner_type, '__origin__') and
+                type_hint.type_.__origin__ == typing.Union
+            ):  # Union
+                # it's a Union
+                union_params_unclean = type_hint.type_.__args__[:]
+                union_params = []
+                for union_param in union_params_unclean:
+                    if isinstance(union_param, typing.ForwardRef):
+                        if not union_param.__forward_evaluated__:
+                            raise ValueError(
+                                f'The typehint of {cls.__name__}.{key} is still a unresolved ForwardRef. You should probably call {cls.__name__}.update_forward_refs() after the class it is pointing to is defined.'
+                            )
+                        # end if
+                        union_param = union_param.__forward_value__
+                    # end if
+                    # We also need to handle NoneType in those once more,
+                    # Usually that would be filtered converted to Optional[…],
+                    # but apparently not for ForwardRefs.
+                    if union_param == NoneType:
+                        continue
+                    # end if
+                    union_params.append(union_param)
+                # end for
+                first_union_type = union_params[0]
+
+                if issubclass(first_union_type, FastORM):
+                    # we can have a reference to another Table, so it could be that
+                    # the table ist the first entry and the actual field type is the second.
+                    # Union[Table, int]
+                    # Union[Table, Tuple[int, int]]
+                    if not len(union_params) == 2:
+                        raise TypeError(
+                            f'Union with other table type must have it\'s primary key(s) as second argument: Union{union_params!r}'
+                        )
+                    # end if
+                    implied_other_class_pk_types = union_params[1]
+                    if (
+                        check_is_generic_alias(implied_other_class_pk_types) and
+                        hasattr(implied_other_class_pk_types, '__origin__') and
+                        implied_other_class_pk_types.__origin__ == tuple and
+                        hasattr(implied_other_class_pk_types, '__args__') and
+                        implied_other_class_pk_types.__args__
+                    ):
+                        implied_other_class_pk_types = list(implied_other_class_pk_types.__args__)
+                    else:
+                        implied_other_class_pk_types = [implied_other_class_pk_types]
+                    # end if
+                    typehints = first_union_type.get_fields_typehints(flatten_table_references=True)
+                    pk_keys_actual_types = [hint.resulting_type.type_ for hint in typehints.values() if hint.is_primary_key]
+                    if implied_other_class_pk_types == pk_keys_actual_types:
+                        # so basically the we know the referenced(!) `SomeTable` has `_id = ['id']`,
+                        # and the referenced `SomeTable.id` is of type `int`,
+                        # and now our given type, which is referencing it, is `Union[SomeTable, int]`, that is matching that.
+
+                        # in other words:
+                        # A `SomeTable` with primary key  being `int`        needs to have the reference called either `SomeTable` or `Union[SomeTable, int]` (`Union[SomeTable, [int]]` is possible too)
+                        # A `SomeTable` with primary keys being `[int, str]` needs to have the reference called either `SomeTable` or `Union[SomeTable, [int, str]]`
+                        other_class = first_union_type  # okay, we can use Table even if there's more. That way we have normalized it and there won't be an error later.
+                    # end if
+                # end if
+            # end if
+            if not other_class:
+                try:
+                    if issubclass(type_hint.type_, FastORM):
+                        other_class: Type[FastORM] = type_hint.type_
+                    # end if
+                except TypeError:
+                    pass
+                # end try
+            # end if
+            other_class: Union[Type[FastORM], None]
+            if not other_class:
+                # is a regular key, just keep it as is
+                # e.g. 'title': (False, [('title', str)]),
+                return_val[key] = FieldInfo(key in _primary_keys, [FieldItem(key, type_hint.type_)])  # TODO: make a copy?
+                # and then let's do the next key
+                continue
+            # end if
+
+            # now we know: it's another FastORM table definition.
+            assert issubclass(other_class, FastORM)
+            # 'test_two__test_one_a__id_part_1': (True, [('test_two', Test2), ('test_one_a', Test1A), ('id_part_1', int)]),
+            if not recursive:
+                return_val[key] = FieldInfo(key in _primary_keys, [FieldItem(key, other_class)])  # TODO: make a copy?
+                continue
+            # end if
+            other_refs = other_class.get_fields_references(recursive=True)
+
+            for other_long_name, field_ref in other_refs.items():
+                if not field_ref.is_primary_key:
+                    continue
+                # end if
+                if not field_ref.types:
+                    raise ValueError(f'Huh? No history at all! {other_long_name!r}, {other_class!r}, {field_ref.types!r}')
+                # end if
+                return_val[f'{key}__{other_long_name}'] = FieldInfo(
+                        key in _primary_keys,
+                        [FieldItem(key, other_class)] + field_ref.types
+                )
+                # end if
+            # end for
+        # end for
+        cached_value[recursive] = return_val
+        setattr(cls, cache_key, cached_value)
+        return return_val
+    # end def
+
+    @classmethod
+    def get_fields(cls, flatten_table_references: bool = False) -> List[str]:
+        """
+        Get's all fields which have type hints and thus we consider as fields for the database.
+        Filters out constants (all upper case, like `CAPSLOCK_VARIABLE`) and hidden fields (starting with `_`).
+        :return: a list with the keys.
+        """
+        return list(cls.get_fields_typehints(flatten_table_references=flatten_table_references).keys())
+    # end def
+
+    @classmethod
+    def get_automatic_fields(cls) -> List[str]:
+        _automatic_fields = getattr(cls, '_automatic_fields', [])[:]
+        return _automatic_fields
+    # end def
+
+    @classmethod
+    def get_ignored_fields(cls) -> List[str]:
+        _ignored_fields = getattr(cls, '_ignored_fields', [])
+        if isinstance(_ignored_fields, types.MemberDescriptorType):
+            # basically that means it couldn't find any actually existing field
+            _ignored_fields = []
+        # end if
+        _ignored_fields = [*_ignored_fields]  # make copy
+        assert_type_or_raise(_ignored_fields, list, parameter_name=f'{cls.__name__}._ignored_fields')
+        _ignored_fields += [
+            '_table_name',
+            '_ignored_fields',
+            '_automatic_fields',
+            '_primary_keys',
+            '_database_cache',
+            '__selectable_fields',
+            '__fields_typehints',
+            '__fields_references',
+            f'_{cls.__name__!s}__selectable_fields',
+            f'_{cls.__name__!s}__fields_typehints',
+            f'_{cls.__name__!s}__fields_references',
+            '__slots__'
+        ]
+        return _ignored_fields
+    # end def
+
+    @classmethod
+    def get_sql_fields(cls) -> List[str]:
+        key = f'_{cls.__name__!s}__selectable_fields'
+        if getattr(cls, key, None) is None:
+            setattr(cls, key, [field for field in cls.get_fields() if not field.startswith('_')])
+        # end if
+        return getattr(cls, key)
+    # end if
+
+    @classmethod
+    def get_select_fields(cls, *, namespace=None) -> str:
+        if namespace:
+            return ', '.join([f'"{namespace}"."{field}" AS "{namespace} {field}"' for field in cls.get_sql_fields()])
+        # end if
+        return ', '.join([f'"{field}"' for field in cls.get_sql_fields()])
+    # end def
+
+    @classmethod
+    def get_select_fields_len(cls) -> int:
+        return len(cls.get_sql_fields())
+    # end if
+
+    @classmethod
+    def get_table(cls) -> str:
+        """
+        Provides the name of the table in a already quoted way, ready to use in SQL queries.
+        Note, that is naive quoting, and can be easily broken out of (possible SQL INJECTION), however the table name
+        should never be user input anyway.
+
+            >>> class Test(FastORM):
+            ...   _table_name = 'sample'
+            >>> Test.get_name()
+            'sample'
+            >>> Test.get_table()
+            '"sample"'
+            >>> print(Test.get_name())
+            sample
+            >>> print(Test.get_table())
+            "sample"
+
+        :return: The quoted table name
+        """
+        _table_name = cls.get_name()
+        return f'"{_table_name}"'
+    # end def
+
+    @classmethod
+    def get_name(cls) -> str:
+        """
+        The name of the table, as used with the database.
+        :return: `table`
+        """
+        _table_name = getattr(cls, '_table_name')
+        return _table_name
+    # end def
+
+    def build_sql_insert(
+        self, *,
+        ignore_setting_automatic_fields: Optional[bool] = None,
+        on_conflict_upsert_field_list: Optional[List[str]] = None,
+    ) -> Tuple[str, Any]:
+        own_keys = self.get_fields()
+        _ignored_fields = self.get_ignored_fields()
+        _automatic_fields = self.get_automatic_fields()
+        assert_type_or_raise(_ignored_fields, list, parameter_name='self._ignored_fields')
+        assert_type_or_raise(_automatic_fields, list, parameter_name='self._automatic_fields')
+
+        placeholder = []
+        values: List[JSONType] = []
+        keys = []
+        upsert_fields = {}  # key is field name, values is the matching placeholder_index.
+        placeholder_index = 0
+        primary_key_index = 0
+        for key in own_keys:
+            if key in _ignored_fields:
+                continue
+            # end if
+            is_automatic_field = None
+
+            if ignore_setting_automatic_fields or on_conflict_upsert_field_list:
+                is_automatic_field = key in _automatic_fields
+            if ignore_setting_automatic_fields and is_automatic_field:
+                continue
+            # end if
+            value = getattr(self, key)
+            if ignore_setting_automatic_fields is None and value is None:
+                continue
+            # end if
+            placeholder_index += 1
+            placeholder.append(f'${placeholder_index}')
+            if isinstance(value, dict):
+                pass
+                # value = json.dumps(value)
+            # end if
+            if isinstance(value, FastORM):
+                # we have a different table in this table, so we probably want to go for it's `id` or whatever the primary key is.
+                # if you got more than one of those PKs, simply specify them twice for both fields.
+                value = value.get_primary_keys_values()[primary_key_index]
+                primary_key_index += 1
+            # end if
+
+            values.append(value)
+            keys.append(f'"{key}"')
+
+            if on_conflict_upsert_field_list and not is_automatic_field:
+                upsert_fields[key] = placeholder_index
+            # end if
+        # end if
+
+        # noinspection SqlNoDataSourceInspection,SqlResolve
+        sql = f'INSERT INTO {self.get_table()} ({",".join(keys)})\n VALUES ({",".join(placeholder)})'
+        if on_conflict_upsert_field_list and upsert_fields:
+            upsert_sql = ', '.join([f'"{key}" = ${placeholder_index}' for key, placeholder_index in upsert_fields.items()])
+            upsert_fields_sql = ', '.join([f'"{field}"' for field in on_conflict_upsert_field_list])
+            sql += f'\n ON CONFLICT ({upsert_fields_sql}) DO UPDATE SET {upsert_sql}'
+        # end if
+        if _automatic_fields:
+            automatic_fields_sql = ', '.join([f'"{key}"' for key in _automatic_fields])
+            sql += f'\n RETURNING {automatic_fields_sql}'
+        # end if
+        sql += '\n;'
+        # noinspection PyRedundantParentheses
+        return (sql, *values)
+    # end def
+
+    @classmethod
+    async def get(cls: Type[CLS_TYPE], conn: Connection, **kwargs) -> Optional[CLS_TYPE]:
+        """
+        Retrieves a single Database element. Error if there are more matching ones.
+        Like `.select(…)` but returns `None` for no matches, the match itself or an error if it's more than one row.
+
+        :param conn:
+        :param kwargs:
+        :return:
+        """
+        rows = await cls.select(conn=conn, **kwargs)
+        if len(rows) == 0:
+            return None
+        # end if
+        assert len(rows) <= 1
+        return rows[0]
+    # end def
+
+    @classmethod
+    async def select(cls: Type[CLS_TYPE], conn: Connection, **kwargs) -> List[CLS_TYPE]:
+        """
+        Get's multiple ones.
+        :param conn:
+        :param kwargs:
+        :return:
+        """
+        fetch_params = cls.build_sql_select(**kwargs)
+        logger.debug(f'SELECT query for {cls.__name__}: {fetch_params[0]!r} with values {fetch_params[1:]}')
+        rows = await conn.fetch(*fetch_params)
+        return [cls.from_row(row) for row in rows]
+    # end def
+
+    @classmethod
+    def build_sql_select(cls, **kwargs):
+        _ignored_fields = cls.get_ignored_fields()
+        typehints: Dict[str, Any] = get_type_hints(cls)
+        non_ignored_fields = [field for field in cls.get_fields() if field not in _ignored_fields]
+        fields = ','.join([
+            f'"{field}"'
+            for field in non_ignored_fields
+            if not field.startswith('_')
+        ])
+        where_index = 0
+        where_parts = []
+        where_values = []
+        # noinspection PyUnusedLocal
+        where_wolf = None
+        for key, value in kwargs.items():
+            if key not in non_ignored_fields:
+                raise ValueError(f'key {key!r} is not a non-ignored field!')
+            # end if
+            assert not isinstance(value, FastORM)
+            # if isinstance(value, HelpfulDataclassDatabaseMixin):
+            #     # we have a different table in this table, so we probably want to go for it's `id` or whatever the primary key is.
+            #     # if you got more than one of those PKs, simply specify them twice for both fields.
+            #     value = value.get_primary_keys_values()[primary_key_index]
+            #     primary_key_index += 1
+            # # end if
+            where_index += 1
+            is_in_list_clause = cls._param_is_list_of_multiple_values(key, value, typehints[key])
+            if is_in_list_clause:
+                assert isinstance(value, (list, tuple))
+                assert len(value) >= 1
+                if len(value) == 1:
+                    # single element list -> normal where is fine -> so we go that route with it.
+                    value = value[0]
+                    is_in_list_clause = False
+                # end if
+            # end if
+            if not is_in_list_clause:  # no else-if as is_in_list_clause could be set False again.
+                where_parts.append(f'"{key}" = ${where_index}')
+                where_values.append(value)
+            else:  # is_in_list_clause is True
+                where_part = ''
+                for actual_value in value:
+                    where_part += f'${where_index},'
+                    where_values.append(actual_value)
+                    where_index += 1
+                # end for
+                where_index -= 1  # we end up with incrementing once too much
+                where_parts.append(f'"{key}" IN ({where_part.rstrip(",")})')
+            # end if
+        # end if
+        where_sql = "" if not where_parts else f' WHERE {" AND ".join(where_parts)}'
+
+        # noinspection SqlResolve,SqlNoDataSourceInspection
+        sql = f'SELECT {fields} FROM "{cls._table_name}"{where_sql}'
+        # noinspection PyRedundantParentheses
+        return (sql, *where_values)
+    # end def
+
+    async def insert(
+        self, conn: Connection, *,
+        ignore_setting_automatic_fields: Optional[bool] = None,
+        on_conflict_upsert_field_list: Optional[List[str]] = None,
+        write_back_automatic_fields: bool = True,
+    ):
+        """
+        :param conn: Database connection to run at.
+        :param ignore_setting_automatic_fields:
+            Skip setting fields marked as automatic, even if you provided.
+            For example if the id field is marked automatic, as it's an autoincrement int.
+            If `True`, setting `id=123` (commonly `id=None`) would be ignored, and instead the database assigns that value.
+            If `False`, the value there will be written to the database.
+            If `None`, it will be ignored as long as the value actually is None, but set if it is non-None.
+            The default setting is `None`.
+        :param on_conflict_upsert_field_list: List of fields which are expected to cause an duplicate conflict, and thus will instead be overwritten.
+        :param write_back_automatic_fields: Apply the automatic fields back to this object.
+                                            Ignored if `ignore_setting_automatic_fields` is False.
+        :return:
+        """
+        fetch_params = self.build_sql_insert(
+            ignore_setting_automatic_fields=ignore_setting_automatic_fields,
+            on_conflict_upsert_field_list=on_conflict_upsert_field_list,
+        )
+        self._database_cache_overwrite_with_current()
+        _automatic_fields = self.get_automatic_fields()
+        if VERBOSE_SQL_LOG:
+            fetch_params_debug = "\n".join([f"${i}={param!r}" for i, param in enumerate(fetch_params)][1:])
+            logger.debug(f'INSERT query for {self.__class__.__name__}\nQuery:\n{fetch_params[0]}\nParams:\n{fetch_params_debug!s}')
+        else:
+            logger.debug(f'INSERT query for {self.__class__.__name__}: {fetch_params!r}')
+        # end if
+        updated_automatic_values_rows = await conn.fetch(*fetch_params)
+        logger.debug(f'INSERT for {self.__class__.__name__}: {updated_automatic_values_rows} for {self}')
+        assert len(updated_automatic_values_rows) == 1
+        updated_automatic_values = updated_automatic_values_rows[0]
+        if ignore_setting_automatic_fields and write_back_automatic_fields:
+            for field in _automatic_fields:
+                assert field in updated_automatic_values
+                setattr(self, field, updated_automatic_values[field])
+                self._database_cache[field] = updated_automatic_values[field]
+            # end for
+        # end if
+    # end def
+
+    def build_sql_update(self):
+        """
+        Builds a prepared SQL statement for update.
+        Only fields with changed values will be updated in the database.
+        However this one doesn't resets the cache for those, see `FastORM.update(…)` for that.
+
+        :return: The SQL string followed by positional parameters for the `conn.execute(…)` method.
+        """
+        _table_name = getattr(self, '_table_name')
+        _primary_keys = getattr(self, '_primary_keys')
+        _database_cache = getattr(self, '_database_cache')
+        _automatic_fields = self.get_automatic_fields()
+        assert_type_or_raise(_table_name, str, parameter_name='self._table_name')
+        assert_type_or_raise(_primary_keys, list, parameter_name='self._primary_keys')
+        assert_type_or_raise(_database_cache, dict, parameter_name='self._database_cache')
+        assert_type_or_raise(_automatic_fields, list, parameter_name='self._automatic_fields')
+
+        # SET ...
+        update_values = self.get_changes()
+
+        # UPDATE ... SET ... WHERE ...
+        placeholder_index = 0
+        other_primary_key_index = 0
+        values: List[Any] = []
+        update_keys: List[str] = []  # "foo" = $1
+        for key, value in update_values.items():
+            value = getattr(self, key)
+            placeholder_index += 1
+            if isinstance(value, FastORM):
+                # we have a different table in this table, so we probably want to go for it's `id` or whatever the primary key is.
+                # if you got more than one of those PKs, simply specify them twice for both fields.
+                value = value.get_primary_keys_values()[other_primary_key_index]
+                other_primary_key_index += 1
+            # end if
+
+            values.append(value)
+            update_keys.append(f'"{key}" = ${placeholder_index}')
+        # end if
+
+        # WHERE pk...
+        primary_key_where: List[str] = []  # "foo" = $1
+        for primary_key in _primary_keys:
+            if primary_key in _database_cache:
+                value = _database_cache[primary_key]
+            else:
+                value = getattr(self, primary_key)
+            # end if
+            placeholder_index += 1
+            primary_key_where.append(f'"{primary_key}" = ${placeholder_index}')
+            values.append(value)
+        # end if
+        logger.debug(f'Fields to UPDATE for selector {primary_key_where!r}: {update_values!r}')
+
+        assert update_keys
+        sql = f'UPDATE "{_table_name}"\n'
+        sql += f' SET {",".join(update_keys)}\n'
+        sql += f' WHERE {" AND ".join(primary_key_where)}\n'
+        sql += ';'
+        # noinspection PyRedundantParentheses
+        return (sql, *values)
+    # end def
+
+    def get_changes(self) -> Dict:
+        """
+        Returns all values which got changed and are now different to the last downloaded database version.
+        """
+        own_keys = self.get_fields()
+        _database_cache = self._database_cache
+        _ignored_fields = self.get_ignored_fields()
+        assert_type_or_raise(own_keys, list, parameter_name='own_keys')
+        assert_type_or_raise(_database_cache, dict, parameter_name='self._database_cache')
+        assert_type_or_raise(_ignored_fields, list, parameter_name='self._ignored_fields')
+
+        update_values: Dict[str, Any] = {}
+        for key in own_keys:
+            if key.startswith('_') or key in _ignored_fields:
+                continue
+            # end if
+            value = getattr(self, key)
+            if key not in _database_cache:
+                update_values[key] = value
+            elif _database_cache[key] != value:
+                update_values[key] = value
+            # end if
+        # end if
+        return update_values
+    # end def
+
+    def has_changes(self) -> bool:
+        """
+        :returns: if we have unsaved changes.
+        """
+        return bool(self.get_changes())
+    # end if
+
+    async def update(self, conn: Connection) -> None:
+        """
+        Update the made changes to the database.
+        Only fields with changed values will be updated in the database.
+
+        :uses: FastORM.build_sql_update()
+        """
+        if not getattr(self, '_database_cache', None):
+            return  # nothing to do.
+        # end if
+        fetch_params = self.build_sql_update()
+        logger.debug(f'UPDATE query for {self.__class__.__name__}: {fetch_params!r}')
+        update_status = await conn.execute(*fetch_params)
+        logger.debug(f'UPDATE for {self.__class__.__name__}: {update_status} for {self}')
+        self._database_cache_overwrite_with_current()
+    # end if
+
+    def build_sql_delete(self):
+        _primary_keys = self.get_primary_keys_keys()
+        _ignored_fields = self.get_ignored_fields()
+        _database_cache = self._database_cache
+        assert_type_or_raise(_ignored_fields, list, parameter_name='self._ignored_fields')
+        assert_type_or_raise(_primary_keys, list, parameter_name='self._primary_keys')
+        assert_type_or_raise(_database_cache, dict, parameter_name='self._database_cache')
+
+        # DELETE FROM "name" WHERE pk...
+        where_values = []
+        placeholder_index = 0
+        primary_key_parts: List[str] = []  # "foo" = $1
+        for primary_key in _primary_keys:
+            if primary_key in _database_cache:
+                value = _database_cache[primary_key]
+            else:
+                value = getattr(self, primary_key)
+            # end if
+            placeholder_index += 1
+            primary_key_parts.append(f'"{primary_key}" = ${placeholder_index}')
+            where_values.append(value)
+        # end if
+        logger.debug(f'Fields to DELETE for selector {primary_key_parts!r}: {where_values!r}')
+
+        # noinspection SqlWithoutWhere,SqlResolve,SqlNoDataSourceInspection
+        sql = f'DELETE FROM {self.get_table()}\n'
+        sql += f' WHERE {" AND ".join(primary_key_parts)}'
+        sql += '\n;'
+        # noinspection PyRedundantParentheses
+        return (sql, *where_values)
+    # end def
+
+    async def delete(self, conn: Connection):
+        fetch_params = self.build_sql_delete()
+        logger.debug(f'DELETE query for {self.__class__.__name__}: {fetch_params!r}')
+        delete_status = await conn.execute(*fetch_params)
+        logger.debug(f'DELETE for {self.__class__.__name__}: {delete_status} for {self}')
+        self._database_cache_remove()
+    # end if
+
+    def clone(self: CLS_TYPE) -> CLS_TYPE:
+        return self.__class__(**self.as_dict())
+    # end if
+
+    @classmethod
+    def get_primary_keys_keys(cls) -> List[str]:
+        return cls._primary_keys
+    # end def
+
+    def get_primary_keys(self) -> Dict[str, Any]:
+        _primary_keys = self.get_primary_keys_keys()
+        return {k: v for k, v in self.as_dict().items() if k in _primary_keys}
+    # end def
+
+    def get_primary_keys_values(self):
+        return list(self.get_primary_keys().values())
+    # end def
+
+    @classmethod
+    def from_row(cls, row):
+        # noinspection PyArgumentList
+        instance = cls(**row)
+        instance._database_cache_overwrite_with_current()
+        return instance
+    # end def
+
+    _COLUMN_AUTO_TYPES: Dict[type, str] = {
+        int: "BIGSERIAL",
+    }
+
+    _COLUMN_TYPES: Dict[type, str] = {
+        bool: "BOOLEAN",
+        bytes: "BYTEA",
+        bytearray: "BYTEA",
+        str: "TEXT",
+        # Python Type
+        # PostgreSQL Type
+        # Source: https://magicstack.github.io/asyncpg/current/usage.html#type-conversion
+
+        # anyenum
+        # str
+
+        # anyrange
+        # asyncpg.Range
+
+        # record
+        # asyncpg.Record, tuple, Mapping
+
+        # bit, varbit
+        # asyncpg.BitString
+
+        asyncpg.Box: "BOX",
+
+        # cidr
+        # ipaddress.IPv4Network, ipaddress.IPv6Network
+        ipaddress.IPv4Network: "CIDR",
+        ipaddress.IPv6Network: "CIDR",
+
+        # inet
+        # ipaddress.IPv4Interface, ipaddress.IPv6Interface, ipaddress.IPv4Address, ipaddress.IPv6Address
+        ipaddress.IPv4Interface: "INET",
+        ipaddress.IPv6Interface: "INET",
+        ipaddress.IPv4Address: "INET",
+        ipaddress.IPv6Address: "INET",
+
+        # macaddr
+        # str
+
+        # time
+        # offset-naïve datetime.time
+
+        # time with time zone
+        # offset-aware datetime.time
+        datetime.time: "TIME",
+
+        # timestamp
+        # offset-naïve datetime.datetime
+        #  +
+        # timestamp with time zone
+        # offset-aware datetime.datetime
+        datetime.datetime: "TIMESTAMP",
+
+        datetime.date: "DATE",  # must come after datetime.datetime as datetime is a subclass of this
+
+        datetime.timedelta: "INTERVAL",
+
+        # float, double precision
+        # float [2]
+        # Inexact single-precision float values may have a different representation when decoded into a Python float. This is inherent to the implementation of limited-precision floating point types. If you need the decimal representation to match, cast the expression to double or numeric in your query.
+        float: "DOUBLE PRECISION",
+
+        # smallint, integer, bigint
+        # int
+        int: "BIGINT",
+
+        # numeric
+        # Decimal
+        decimal.Decimal: "NUMERIC",
+
+        # json, jsonb
+        # str
+        dict: "JSONB",
+        list: "JSONB",  # the special cases like INT[] will be processed beforehand.
+
+        # line
+        # asyncpg.Line
+        asyncpg.Line: "LINE",
+
+        # lseg
+        # asyncpg.LineSegment
+        asyncpg.LineSegment: "LSEG",
+
+        # money
+        # str
+
+        asyncpg.Circle: "CIRCLE",
+
+        # point
+        # asyncpg.Point
+        asyncpg.Point: "POINT",
+
+        # polygon
+        # asyncpg.Polygon
+        asyncpg.Polygon: "POLYGON",
+
+        # path
+        # asyncpg.Path
+        asyncpg.Path: "PATH",
+
+        # uuid
+        # uuid.UUID
+        uuid.UUID: "UUID",
+
+        BaseModel: "JSONB",
+    }
+
+    _COLUMN_TYPES_SPECIAL: Dict[Callable[[type], bool], str] = {
+        lambda cls: hasattr(cls, 'to_dict'): _COLUMN_TYPES[dict],
+        lambda cls: hasattr(cls, 'to_array'): _COLUMN_TYPES[dict],  # pytgbot object uses to_array
+    }
+
+    _COLUMN_AUTO_TYPES_SPECIAL: Dict[Callable[[type], bool], str] = {
+    }
+
+    @classmethod
+    def _match_type(cls, python_type: type, *, automatic: bool) -> str:
+        try:
+            issubclass(python_type, object)
+        except TypeError:  # issubclass() arg 1 must be a class
+            raise TypeError(f'Could not process type {python_type} as a python type. Probably a typing annotation?.')
+        if automatic:
+            for sql_py_type, sql_type in cls._COLUMN_AUTO_TYPES.items():
+                if issubclass(python_type, sql_py_type):
+                    return sql_type
+                # end if
+            # end for
+            for check_function, sql_type in cls._COLUMN_AUTO_TYPES_SPECIAL.items():
+                if check_function(python_type):
+                    return sql_type
+                # end if
+            # end for
+        # end if
+        for sql_py_type, sql_type in cls._COLUMN_TYPES.items():
+            if issubclass(python_type, sql_py_type):
+                return sql_type
+            # end if
+        # end for
+        for check_function, sql_type in cls._COLUMN_TYPES_SPECIAL.items():
+            if check_function(python_type):
+                return sql_type
+            # end if
+        # end for
+        raise TypeError(f'Could not process type {python_type} as database type.')
+    # end def
+
+    @classmethod
+    async def create_table(
+        cls,
+        conn: Connection,
+        if_not_exists: bool = False,
+        psycopg2_conn: Union['psycopg2.extensions.connection', 'psycopg2.extensions.cursor', None] = None,
+    ):
+        """
+        Builds and executes a CREATE TABLE statement.
+
+        :param conn: the `asyncpg` database connection to execute this with.
+
+        :param if_not_exists:
+            If the table definition should include IF NOT EXISTS, thus not producing an error if it does, but instead being silently ignored.
+
+        :param psycopg2_conn:
+            If you have complex default types for your fields (everything other than None, bool, int, and pure ascii strings),
+            The psycopg2 library is used to build a injection safe SQL string.
+            Therefore then psycopg2 has to be installed (pip install psycopg2-binary),
+            and a connection (or cursor) to the database must be provided (psycopg2_conn = psycopg2.connect(…)).
+        :return:
+        """
+        create_params = cls.build_sql_create(if_not_exists=if_not_exists, psycopg2_conn=psycopg2_conn if psycopg2_conn else conn)
+        logger.debug(f'CREATE query for {cls.__name__}: {create_params!r}')
+        create_status = await conn.execute(*create_params)
+        logger.debug(f'CREATEed {cls.__name__}: {create_status}')
+    # end if
+
+    @classmethod
+    def build_sql_create(
+        cls,
+        if_not_exists: bool = False,
+        psycopg2_conn: Union['psycopg2.extensions.connection', 'psycopg2.extensions.cursor', None] = None,
+    ) -> Tuple[str, Any]:
+        """
+        Builds a CREATE TABLE statement.
+
+        :param if_not_exists:
+            If the table definition should include IF NOT EXISTS, thus not producing an error if it does, but instead being silently ignored.
+
+        :param psycopg2_conn:
+            If you have complex default types for your fields (everything other than None, bool, int, and pure ascii strings),
+            The psycopg2 library is used to build a injection safe SQL string.
+            Therefore then psycopg2 has to be installed (pip install psycopg2-binary),
+            and a connection to the database must be provided.
+            This can be either a psycopg2 connection (psycopg2_conn = psycopg2.connect(…)),
+            a psycopg2 cursor.
+            If a asyncpg Connection is given we try to create a psycopg2 connection from it automatically.
+        :return:
+        """
+        assert issubclass(cls, BaseModel)  # because we no longer use typing.get_type_hints, but pydantic's `cls.__fields__`
+        _table_name = getattr(cls, '_table_name')
+        _automatic_fields = cls.get_automatic_fields()
+        assert_type_or_raise(_table_name, str, parameter_name='cls._table_name')
+        assert_type_or_raise(_automatic_fields, list, parameter_name='cls._automatic_fields')
+        _ignored_fields = cls.get_ignored_fields()
+
+        type_hints = cls.get_fields_typehints(flatten_table_references=True)
+        primary_keys = [key for key, field_typehint in type_hints.items() if field_typehint.is_primary_key]
+        single_primary_key = len(primary_keys) == 1
+
+        # .required tells us if we have a default value set or not.
+        # .allow_none tells us if None is supported
+        # .default tells us what default (or None)
+
+        placeholder_index = 0
+        placeholder_values = []
+        type_definitions = []
+        all_defaults_are_simple_types_and_save_to_concatenate = True  # they only contain ints, boolean and None
+
+        for key, type_hint_info in type_hints.items():
+            type_hint = type_hint_info.resulting_type
+            is_automatic_field = key in _automatic_fields
+
+            # start processing the default_factory of the current field (not the resolved one),
+            # check if it's an AutoincrementType type.
+            if isinstance(type_hint_info.referenced_type.default_factory, AutoincrementType):
+                is_automatic_field = True
+            # end if
+
+            is_optional, sql_type = cls.match_type(type_hint=type_hint, is_automatic_field=is_automatic_field, key=key)
+            if type_hint.allow_none:
+                is_optional = True
+            # end if
+
+            if (
+                any(
+                    not sub_hint.type_.required and
+                    # using sub_hint.field_info.* instead of sub_hint.* as there a non set default will actually be `pydantic.Undefined` and thus can't be confused with None.
+                    # now either the default is already None. Alternatively it doesn't has a default and .allow_none is set to true.
+                    (sub_hint.type_.field_info.default is None or (isinstance(sub_hint.type_.field_info.default, UndefinedType) and sub_hint.type_.allow_none)) and
+                    # also there shouldn't be a default factory. But we allow some special cases which have no actual default "value" meaning and can be treated as no default factory.
+                    (sub_hint.type_.field_info.default_factory is None or isinstance(sub_hint.type_.field_info.default_factory, (AutoincrementType,)))
+
+                    for sub_hint in type_hint_info.types
+                )
+            ):
+                is_optional = True
+            # end if
+
+            if is_automatic_field:
+                # if it is an automatic field, the optional must have been so it can be left empty when creating a new object.
+                is_optional = False
+            # end if
+
+            # Now let's build that column's sql part
+
+            # column_name, data_type:
+            type_definition_parts = [f'  "{key}"', sql_type]
+
+            # column_constraints:
+            if not is_optional:
+                type_definition_parts.append("NOT NULL")
+            # end if
+
+            # has it a default value?
+            if not isinstance(type_hint.field_info.default, UndefinedType):
+                type_definition_parts.append(f'DEFAULT {{default_placeholder_{placeholder_index}}}')
+                placeholder_index += 1
+                default_value = type_hint.field_info.default
+                if not (
+                    default_value is None or
+                    isinstance(default_value, (int, bool)) or
+                    (isinstance(default_value, str) and default_value.isascii())  # py 3.7+, see https://stackoverflow.com/a/51141941/3423324#how-to-check-if-a-string-in-python-is-in-ascii
+                ):
+                    all_defaults_are_simple_types_and_save_to_concatenate = False
+                # end if
+                placeholder_values.append(default_value)
+            # end if
+            if single_primary_key and key in primary_keys:
+                type_definition_parts.append('PRIMARY KEY')
+            # end if
+
+            # merge the line
+            type_definitions.append(" ".join(type_definition_parts))
+        # end for
+        sql_lines = [
+            f"CREATE TABLE {'IF NOT EXISTS ' if if_not_exists else ''}{cls.get_table()} (",
+            ",\n".join(type_definitions),
+        ]
+        if len(primary_keys) > 1:
+            sql_lines[-1] += ','
+            # keys = [key for key, item in type_hints.items()]
+            sql_lines.append(f'''  PRIMARY KEY ({', '.join(f'"{key}"' for key in primary_keys)})''')
+        # end if
+        sql_lines.append(");")
+
+        sql = "\n".join(
+            sql_lines
+        )
+        if placeholder_values:
+            # we do have at least one row like
+            # '"blah" SOME_TYPE ... DEFAULT {default_placeholder_0}'
+            # or maybe even more of those.
+            # Now we need to fill them in.
+            # To do it safely, we use `psycopg2.sql.SQL` and `psycopg2.sql.Literal` as soon as we have complex types.
+            # Complex means anything which isn't None (NULL), bool (true/false), ints (0,1,42,69,4458, etc.) and pure ascii strings (not “ª∂ﬁ˜ªæäß»Íƒ†”, etc.)
+            # We also do that if we detect psycopg2 and a given psycopg2_conn connection, so a user can be on the save side with having that installed and providing a connection.
+            # In fact, `FastORM.create_table(…)` already shares the connection details with us, in that case we automatically use the save approach when you got psycopg2 installed.
+            if all_defaults_are_simple_types_and_save_to_concatenate and not (psycopg2_conn is not None and psycopg2):
+                # special case where it's enough to use python only formatting, as we have only NONE, bool, ints and pure ascii strings.
+                formatting_dict = {}
+                for i, default_value in enumerate(placeholder_values):
+                    assert_type_or_raise(default_value, None, bool, int, str, parameter_name=f'default_values[{i}]')
+                    if default_value is None:
+                        sql_value = 'NULL'
+                    elif isinstance(default_value, bool):
+                        sql_value = 'true' if default_value else 'false'
+                    elif isinstance(default_value, int):
+                        sql_value = str(default_value)
+                    else:  # str
+                        assert isinstance(default_value, str)
+                        assert default_value.isascii()
+                        sql_value = "'" + default_value.replace("'", "''") + "'"  # this SHOULD be enough... hopefully.  If you don't trust it either, install psycopg2 and provide a connection.
+                    # end if
+                    formatting_dict[f'default_placeholder_{i}'] = sql_value
+                # end if
+                sql = sql.format(**formatting_dict)
+            else:
+                if psycopg2.sql is None or psycopg2.extensions is None or psycopg2.connect is None:
+                    # so we had an import error earlier (on top of the file)
+                    # raise a proper ImportError message with useful information
+                    raise ImportError(
+                        'For using complex default values (everything other than None, bool, int, and pure ascii strings) '
+                        'psycopg2 needs to be installed (pip install psycopg2-binary).'
+                    )
+                # end if
+                try:
+                    assert_type_or_raise(psycopg2_conn, Connection, psycopg2.extensions.connection, psycopg2.extensions.cursor, parameter_name='psycopg2_conn')
+                except TypeError:
+                    # enhance error message with useful information
+                    error_class = ValueError if psycopg2_conn is None else TypeError
+                    raise error_class(
+                        'For using complex default values (everything other than None, bool, int, and pure ascii strings) '
+                        'a psycopg2 connection or cursor needs to be provided as the psycopg2_conn parameter.'
+                    )
+                # end try
+                if isinstance(psycopg2_conn, Connection):
+                    # if it's a asyncpg Connection, try to build the needed psycopg2 connection from it.
+                    # noinspection PyProtectedMember
+                    params = dict(
+                        database=psycopg2_conn._params.database,  # aka dbname
+                        user=psycopg2_conn._params.user,
+                        password=psycopg2_conn._params.password,
+                        host=psycopg2_conn._addr[0] if isinstance(psycopg2_conn._addr, tuple) else psycopg2_conn._addr,
+                        port=psycopg2_conn._addr[1] if isinstance(psycopg2_conn._addr, tuple) else None,
+                    )
+                    unix_socket_match = re.match(r'^(?P<path>/.*)(?<=/)\.s\.PGSQL\.(?P<port>\d+)$', params['host'])  # https://regex101.com/r/bNWUzG/1/
+                    if unix_socket_match:
+                        params['host'] = unix_socket_match.group('path')
+                        params['port'] = int(unix_socket_match.group('port'))
+                    # end if
+                    psycopg2_conn = psycopg2.connect(**params)
+                # end if
+
+                placeholder_values = [psycopg2.sql.Literal(value) for value in placeholder_values]
+                formatting_dict = {f'default_placeholder_{i}': val for i, val in enumerate(placeholder_values)}
+                sql = psycopg2.sql.SQL(sql)
+                sql = sql.format(**formatting_dict).as_string(context=psycopg2_conn)
+            # end if
+        # noinspection PyRedundantParentheses
+        return (sql, *[])
+    # end def
+
+    @classmethod
+    async def create_table_references(
+        cls,
+        conn: Connection,
+    ):
+        """
+        Builds and executes a ALTER TABLE and CREATE TABLE statement.
+
+        :param conn: the `asyncpg` database connection to execute this with.
+        :return:
+        """
+        reference_params = cls.build_sql_references()
+        logger.debug(f'REFERENCE query for {cls.__name__}: {reference_params!r}')
+        if reference_params[0] != SQL_DO_NOTHING:
+            reference_status = await conn.execute(*reference_params)
+            logger.debug(f'REFERENCEed {cls.__name__}: {reference_status}')
+        else:
+            logger.debug(f'REFERENCEed {cls.__name__}: No need to do anything.')
+        # end def
+    # end if
+
+    @classmethod
+    def build_sql_references(cls) -> Tuple[str, ...]:
+        """
+        Prepare the query for generating references between tables, including the indexes on the outgoing fields.
+        In case we don't have any references to other tables, `fastorm.SQL_DO_NOTHING` will be returned as SQL parameter.
+        This is also a valid SQL string which does nothing in your database, but can be executed.
+        This way there won't be an error for users blindly executing the stuff returned from this function.
+        But if you wanna save on that database roundtrip, for something like `sql, *params = SomeClass.build_sql_references()`,
+        you can check for `sql == fastorm.SQL_DO_NOTHING` and then not do the database query.
+        """
+        # references to other tables
+        references_types: Dict[str, FieldInfo[ModelField]] = {
+            # everything with a different table will have more than one type in there.
+            long_key: field_typehint for long_key, field_typehint in cls.get_fields_references(recursive=True).items()
+            if len(field_typehint.types) > 1
+        }
+        if not references_types:
+            # noinspection PyRedundantParentheses
+            return (SQL_DO_NOTHING,)
+        # end if
+        index_lines = []
+        reference_lines = []
+        current_table = cls.get_name()
+        for current_table_field, field_typehint in references_types.items():
+            field_typehint: FieldInfo[ModelField]
+            assert issubclass(field_typehint.referenced_type, FastORM)
+            referenced_table = field_typehint.referenced_type.get_name()
+            referenced_table_field = field_typehint.referenced_field
+            # noinspection SqlNoDataSourceInspection,SqlResolve
+            index_lines.append(
+                f'CREATE INDEX "idx_{current_table}___{current_table_field}" ON "{current_table}" ("{current_table_field}");')
+            # noinspection SqlNoDataSourceInspection,SqlResolve
+            reference_lines.append(
+                f'ALTER TABLE "{current_table}" ADD CONSTRAINT "fk_{current_table}___{current_table_field}" FOREIGN KEY ("{current_table_field}") REFERENCES "{referenced_table}" ("{referenced_table_field}") ON DELETE CASCADE;')
+        # end for
+        sql_lines: List[str] = []
+        sql_lines.extend(index_lines)
+        sql_lines.extend(reference_lines)
+        sql = "\n".join(
+            sql_lines
+        )
+        # noinspection PyRedundantParentheses
+        return (sql,)
+        # end if
+    # end def
+
+    @classmethod
+    def match_type(
+        cls,
+        type_hint: TYPEHINT_TYPE,
+        *,
+        is_automatic_field: Optional[bool] = None,
+        key: Optional[str] = None,
+        is_outer_call: bool = True
+    ) -> Tuple[bool, str]:
+        """
+        Processes a type hint to produce a CREATE TABLE sql segment of the type of that type hint and if it's optional..
+
+            >>> class Example(FastORM):
+            ...   foo: Optional[int]
+            ...
+
+            >>> type_hints = typing.get_type_hints(Example)
+            >>> Example.match_type(type_hints['foo'], is_automatic_field=False)
+            (True, 'BIGINT')
+
+        """
+        is_union_type = check_is_union_type(type_hint)
+        if isinstance(type_hint, typing.ForwardRef):
+            if not type_hint.__forward_evaluated__:
+                raise ValueError(
+                    f'The typehint of {cls.__name__}.{key} is still a unresolved ForwardRef. You should probably call {cls.__name__}.update_forward_refs() after the class it is pointing to is defined.'
+                )
+            # end if
+            type_hint = type_hint.__forward_value__
+        # end if
+
+        if hasattr(type_hint, '__origin__') or is_union_type:
+            if check_is_annotated_type(type_hint):
+                # https://stackoverflow.com/q/68275615/3423324#what-is-the-right-way-to-check-if-a-type-hint-is-annotated
+                actual_type = type_hint.__origin__  # str or wherever was the first parameter.
+                metadata = type_hint.__metadata__
+                if not isinstance(metadata, (tuple, list)):
+                    metadata = (metadata,)
+                # end if
+                if AutoincrementType in metadata:
+                    is_automatic_field = True
+                # end if
+                is_optional, sql_type = cls.match_type(
+                    actual_type, is_automatic_field=is_automatic_field, is_outer_call=False
+                )
+                return is_optional, sql_type
+            # end if
+
+            origin = type_hint.__origin__ if hasattr(type_hint, '__origin__') else type(type_hint)
+            is_union_type = check_is_union_type(origin)
+            if is_union_type or origin in (typing.Optional, typing.Union):  # Optional is an special union, too
+                union_params = type_hint.__args__[:]  # this was __union_params__ in python3.5, but __args__ in 3.6+
+                if not isinstance(union_params, (list, tuple)):
+                    raise TypeError(
+                        f'Union type for key {key} has unparsable params.', union_params,
+                    )
+                # end if
+                if NoneType in union_params:
+                    is_optional = True
+                    union_params = [param for param in union_params if not issubclass(param, NoneType)]
+                else:
+                    is_optional = False
+                # end if
+                if len(union_params) == 0:
+                    raise TypeError(
+                        f'Union with no (non-None) type(s) at key {key}.', type_hint.__args__,
+                    )
+                # end if
+                first_union_type = union_params[0]
+                if not all(first_union_type == x for x in union_params[1:]):
+                    raise TypeError(
+                        f'Union with more than one type at key {key}.', union_params,
+                    )
+                # end if
+                additional_is_optional, sql_type = cls.match_type(
+                    first_union_type, is_automatic_field=is_automatic_field, is_outer_call=False
+                )
+                if additional_is_optional:
+                    is_optional = True
+                # end if
+            elif isinstance(origin, typing.List) or issubclass(origin, list):
+                list_params = type_hint.__args__
+                if len(list_params) != 1:  # list has one type
+                    raise TypeError(
+                        'List with more than one type parameter.', type_hint, list_params
+                    )
+                # end if
+                the_type = list_params[0]
+                try:
+                    # we will now recursively go into that list.
+                    # if it is like `list[list[list[int]]] it will succeed as INT,
+                    # and for those 3 lists the [] will be added 3 times, resulting in INT[][][]
+                    # If any of those inner lists aren't a compatible type (TypeError),
+                    # e.g. list[list[Union[str, int]]], we have to use a json dict instead.
+                    _, sql_type = cls.match_type(
+                        the_type, is_automatic_field=is_automatic_field, is_outer_call=False
+                    )
+                    sql_type = "".join((sql_type, "[]"))  # append '[]' to the sql_type
+                    return False, sql_type  # the list itself can't be optional, that has to be done by an outer Optional[].
+                except TypeError as e:
+                    if not is_outer_call:
+                        # make sure we don't end up with JSONB[] for list[list[Union[str, int]]],
+                        # only the outer one should migrate to json.
+                        raise e
+                    # end if
+                    logger.debug('Could not parse as a single type list (e.g. INT[][]), now will be a json field.', exc_info=True)
+                    return False, cls._COLUMN_TYPES[dict]
+                # end try
+            elif isinstance(origin, typing.Tuple) or issubclass(origin, builtins.tuple):
+                tuple_params = type_hint.__args__
+                if len(tuple_params) == 0:  # list has one type
+                    raise TypeError(
+                        'Tuple has no parameters.', type_hint, tuple_params
+                    )
+                # end if
+
+                # check if all types of the tuple are the same, so we can use a list
+                first_type = tuple_params[0]
+                if all(first_type == x for x in tuple_params[1:]):
+                    # we hope this will give us something like  INT, TEXT, FLOAT, etc.
+                    _, sql_type = cls.match_type(
+                        first_type, is_automatic_field=is_automatic_field, is_outer_call=False
+                    )
+                    sql_type = "".join((sql_type, "[]"))  # append '[]' to the sql_type
+                    return False, sql_type  # the tuple itself can't be optional, that has to be done by an outer Optional[].
+                # end if
+
+                # so the types are all over the place, so we will have to fallback to json.
+                sql_type = cls._COLUMN_TYPES[dict]
+                return False, sql_type  # the list itself can't be optional, that has to be done by an outer Optional[].
+            else:
+                raise ValueError('Enclosed by an unknown type', origin, f'key={key!r}')
+            # end case
+        elif isinstance(type_hint, ModelField):
+            is_optional = type_hint.allow_none
+            # is_optional = type_hint.allow_none and (type_hint.shape != SHAPE_SINGLETON or not type_hint.sub_fields)
+            try:
+                subtype_is_optional, sql_type = cls.match_type(
+                    type_hint=type_hint.type_, is_automatic_field=is_automatic_field, key=key, is_outer_call=False,
+                )
+            except TypeError as e:
+                if not is_outer_call:
+                    # make sure we don't end up with JSONB[] for list[list[Union[str, int]]],
+                    # only the outer one should migrate to json.
+                    raise e
+                # end if
+                logger.debug(
+                    'Could not parse as a single type list (e.g. INT[][]), now will be a json field.', exc_info=True
+                )
+                return False, cls._COLUMN_TYPES[dict]
+            # end try
+
+            # pydantic makes t6_2: str = None  to be  t6_2: Optional[str] = None, couldn't find a way to detect only the first variant.
+            # if is_optional and type_hint.field_info.default is None:
+            #     # e.g. t6_2: str = None
+            #     assert type_hint.field_info.default is None
+            #     assert not isinstance(type_hint.field_info.default, UndefinedType)
+            #     raise ValueError("You can't have an non-optional type default to None")
+            # # end if
+
+            if type_hint.outer_type_ == type_hint.type_:
+                # e.g. for str,  typehint.outer_type_ is str
+                #      for str,  typehint.type_       is str
+                # but also for Optional[str] it is  both  str!
+                return is_optional, sql_type
+            if check_is_generic_alias(type_hint.outer_type_) and hasattr(type_hint.outer_type_, '__origin__'):
+                # e.g. for list[int],  typehint.outer_type_ is List[int], thus having a .__origin__ == list
+                #      for list[int],  typehint.type_       is int
+                # isinstance(list[int], GenericAlias) == True
+
+                wrapper_class = type_hint.outer_type_.__origin__  # e.g. list if we had List[int].
+                if issubclass(wrapper_class, list):
+                    sql_type = "".join([sql_type, "[]"])
+                # end if
+            elif check_is_annotated_type(type_hint.outer_type_):
+                return cls.match_type(
+                    type_hint.outer_type_, is_automatic_field=is_automatic_field, is_outer_call=False
+                )
+            # end if
+        else:
+            is_optional = False
+            sql_type = cls._match_type(type_hint, automatic=is_automatic_field)  # fails anyway if not in the list above
+        # end case
+        return is_optional, sql_type
+    # end def
+
+    @classmethod
+    def _param_is_list_of_multiple_values(cls, key: str, value: Any, typehint: Any):
+        """
+        If a value is multiple times of what was defined.
+        :param key:
+        :param value:
+        :param typehint:
+        :return: True if the `value` is a list of tuple of arguments satisfying the `typehint`.
+        """
+        if not isinstance(value, (list, tuple)):
+            # we don't have a list -> can't be multiple values
+            # this is a cheap check preventing most of the values.
+            return False
+        # end if
+
+        original_type_fits = False
+        listable_type_fits = False
+        try:
+            check_type(argname=key, value=value, expected_type=typehint)
+            original_type_fits = True  # the original was already compatible
+        except TypeError:
+            pass
+        # end if
+        try:
+            check_type(argname=key, value=value, expected_type=Union[Tuple[typehint], List[typehint]])
+            listable_type_fits = True  # the original was already compatible
+        except TypeError:
+            pass
+        # end if
+
+        logger.debug(f'type fitting analysis: original: {original_type_fits}, tuple/list: {listable_type_fits}')
+        if not listable_type_fits:
+            # easy one,
+            # so our list/tuple check doesn't match,
+            # so it isn't compatible.
+            return False
+        # end if
+        if not original_type_fits:
+            # tuple/list one fits
+            # but the original one does not.
+            # pretty confident we have a list/tuple of a normal attribute and can do a `WHERE {key} IN ({",".join(value)})`
+            return True
+        # end if
+
+        # else -> listable_type_fits == True, original_type_fits == True
+        # ooof, so that one would have already be accepted by the original type...
+        # That's a tough one...
+        # we err to the side of caution
+        logger.warn(f'Not quite sure if it fits or not, erring to the side of caution and assuming single parameter.')
+        return False
+    # end def
+
+    _CLASS_SERIALIZERS = {
+        # # class: callable(data) -> json
+        # # E.g.:
+        # TgBotApiObject: lambda obj: return obj._raw if hasattr(obj, '_raw') and obj._raw else obj.to_array()
+    }
+
+    @classmethod
+    async def create_connection(cls, database_url) -> Connection:
+        # https://magicstack.github.io/asyncpg/current/usage.html#example-automatic-json-conversion
+        conn = await asyncpg.connect(database_url)
+        return await cls._set_up_connection(conn=conn)
+    # end def
+
+    @classmethod
+    async def create_connection_pool(cls, database_url) -> Pool:
+        # https://magicstack.github.io/asyncpg/current/usage.html#example-automatic-json-conversion
+        return await asyncpg.create_pool(database_url, setup=cls._set_up_connection)
+    # end def
+
+    @classmethod
+    async def _set_up_connection(cls, conn: Connection):
+        """
+        Sets up a connection to properly do datetime and json decoding.
+
+        Prepares writing datetimes (as ISO format) and class instances as json if they have a `.to_dict()`, `.to_array()` function.
+        An easy way to add your is by having a `.to_json()` function like above or
+        appending your class to `_CLASS_SERIALIZERS` like so:
+        ```py
+        # anywhere in your code, to be run once
+        FastORM._CLASS_SERIALIZERS[SomeClass] = lambda obj: obj.do_something()
+        ```
+        :param conn:
+        :return:
+        """
+        import json
+
+        def decoder_with_empty(text):
+            if text.strip() == '':
+                return None
+            # end if
+            return json.loads(text)
+        # end def
+
+        def json_dumps(obj):
+            logger.debug(f'Encoding to JSON: {obj!r}')
+
+            def my_converter(o):
+                if isinstance(o, datetime.datetime):
+                    return o.isoformat()
+                # end def
+                if hasattr(o, 'to_array'):
+                    return o.to_array()  # TgBotApiObject from pytgbot
+                # end def
+                if hasattr(o, 'to_dict'):
+                    return o.to_dict()
+                # end def
+
+                # check _CLASS_SERIALIZERS,
+                # a easy way to add your own by writing FastORM._CLASS_SERIALIZERS[Class] = lambda obj: obj
+                for type_to_check, callable_function in cls._CLASS_SERIALIZERS.items():
+                    if isinstance(o, type_to_check):
+                        return callable_function(o)
+                    # end if
+                # end for
+            # end def
+            return json.dumps(obj, default=my_converter)
+        # end def
+
+        for sql_type in ('json', 'jsonb'):
+            await conn.set_type_codec(
+                sql_type,
+                encoder=json_dumps,
+                decoder=decoder_with_empty,
+                schema='pg_catalog'
+            )
+        # end for
+        return conn
+    # end def
+
+    @classmethod
+    async def get_connection(cls, database_url):
+        """
+        Deprecated, use `FastORM.create_connection(…)` instead.
+        """
+        logger.warning(
+            'The use of FastORM.get_connection(…) is deprecated, use FastORM.create_connection(…)` instead.',
+            exc_info=True,
+        )
+        return await cls.create_connection(database_url=database_url)
+    # end def
+# end class
+
+
+class AutoincrementType(object):
+    """
+    Below there will be a singleton called Autoincrement.
+    It can be used in the following two ways, they are the same:
+
+        >>. Autoincrement = AutoincrementType()
+        >>. class Foo(FastORM):
+        ...   id_a: int = Field(default_factory=Autoincrement, other_field_parameters=...)
+        ...   id_b: int = Autoincrement(other_field_parameters=...)
+
+    In other words, the following two are doing the same:
+
+        >>. example_1 = Autoincrement(default=None)
+        >>. example_2 = Field(default_factory=Autoincrement)
+
+        >>. from pydantic.fields import FieldInfo
+        >>. isinstance(example_1, FieldInfo)
+        True
+        >>. isinstance(example_2, FieldInfo)
+        True
+
+        >>. Autoincrement().__dir__() == Field(default_factory=Autoincrement).__dir__()
+        True
+
+    """
+
+    def __init__(self):
+        self.__name__ = "fastorm.Autoincrement"  # some internals of Field want to know that.
+    # end def
+
+    @typing.overload
+    def __call__(
+        self,
+        default: Any = Undefined,
+        *,
+        default_factory: Optional[NoArgAnyCallable] = None,
+        alias: str = None,
+        title: str = None,
+        description: str = None,
+        const: bool = None,
+        gt: float = None,
+        ge: float = None,
+        lt: float = None,
+        le: float = None,
+        multiple_of: float = None,
+        min_items: int = None,
+        max_items: int = None,
+        min_length: int = None,
+        max_length: int = None,
+        allow_mutation: bool = True,
+        regex: str = None,
+        **extra: Any,
+    ) -> Any:
+        pass
+    # end def
+
+    def __call__(self, *args, **kwargs) -> None:
+        if not args and not kwargs:
+            # For the use in `Field(default_factory=Autoincrement)`, we will be called without parameters.
+            # so we return the default value this object should then have, that is `None`.
+            # It would be cooler, but we can't return Autoincrement as that would be incompatible with the field's type.
+            return None
+        # end if
+
+        # so it's not the `Field(default_factory=Autoincrement)` calling us with zero parameters
+        assert 'default_factory' not in kwargs
+        kwargs['default_factory'] = Autoincrement
+        return Field(*args, **kwargs)
+    # end def
+# end class
+
+
+Autoincrement = AutoincrementType()
