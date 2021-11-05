@@ -1,0 +1,48 @@
+#  Copyright (c) 2020-2021 ETH Zurich, SIS ID and HVL D-ITET
+#
+"""
+Tests for the validation methods by utils
+"""
+import pytest
+import numpy as np
+from hvl_ccb.utils.validation import (
+    validate_number,
+    validate_bool,
+)
+
+
+def test_validate_number():
+    assert validate_number("Test", 1, None, int) is None
+    assert validate_number("Test", 1.1, None, float) is None
+    assert validate_number("Test", [1, 2, 3]) is None
+    assert validate_number("Test", np.array([1, 2, 3])) is None
+    assert validate_number("Test", (1, 2, 3)) is None
+    assert validate_number("Test", {"a": 1, "b": 2}) is None
+    with pytest.raises(TypeError):
+        validate_number("Test", [1, 2, 3.3], None, int)
+    with pytest.raises(ValueError):
+        validate_number("Test", -1, (0, 10), int)
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (1, 2))
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (2, 4))
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (2, 2.5))
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (None, 2.5))
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (2, None))
+    with pytest.raises(ValueError):
+        validate_number("Test", [1, 2, 3.3], (2, np.inf))
+    with pytest.raises(TypeError):
+        validate_number("Test", {"a": 1, "b": "c"})
+    with pytest.raises(TypeError):
+        validate_number("Test", "a")
+    with pytest.raises(TypeError):
+        validate_number("Test", 1, None, float)
+
+
+def test_validate_bool():
+    with pytest.raises(TypeError):
+        validate_bool("Test", "True")
+    assert validate_bool("Test", True) is None
