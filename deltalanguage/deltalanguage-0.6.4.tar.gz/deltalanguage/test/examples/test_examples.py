@@ -1,0 +1,120 @@
+"""This test is meant for testing of all examples.
+"""
+
+import os
+import subprocess
+import unittest
+import textwrap
+
+from deltalanguage.test._utils import get_full_filelist, run_notebook
+
+
+class TestTutorials(unittest.TestCase):
+    """Test examples/tutorials.
+
+    All files meant to have assertion statements.
+    """
+
+    def test_notebooks(self):
+        filelist = get_full_filelist(
+            os.path.join('examples', 'tutorials')
+        )
+
+        for file in filelist:
+            if file.endswith('.ipynb'):
+                print('running ' + file)
+                _, errors = run_notebook(file)
+                self.assertEqual(errors, [], msg=file + " failed")
+
+    def test_scripts(self):
+        filelist = get_full_filelist(
+            os.path.join('examples', 'tutorials')
+        )
+
+        for file in filelist:
+            if file.endswith('.py'):
+                print('running ' + file)
+                pipes = subprocess.Popen(['python', file],
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE)
+                _, errors = pipes.communicate()
+                for error in errors.decode("utf-8").split("\n"):
+                    if error:
+                        self.assertIn("[INFO]", error, msg=file + " failed")
+
+
+class TestHardware(unittest.TestCase):
+    """Test examples/hardware."""
+
+    def test_dds_sine_wave(self):
+        file = "examples/hardware/dds_sine_wave.ipynb"
+        print('running ' + file)
+        _, errors = run_notebook(file)
+        self.assertEqual(errors, [], msg=file + " failed")
+
+
+class TestMicromotion(unittest.TestCase):
+    """Test examples/demos/micromotion."""
+
+    def test_migen_nodes(self):
+        path = "examples/demos/micromotion/migen/"
+        files = [
+            "timestamper_model.py",
+            "timestamper_interface.py",
+            "DAC_controller.py"
+        ]
+
+        for file in files:
+            errors = None
+            filename = path + file
+            print('running ' + filename)
+            pipes = subprocess.Popen(['python', filename],
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+            _, errors = pipes.communicate()
+            for error in errors.decode("utf-8").split("\n"):
+                if error:
+                    self.assertTrue(("INFO" in error) or (
+                        "DEBUG" in error), error)
+
+
+class TestCombTree(unittest.TestCase):
+    """Test examples/comb_tree."""
+
+    def test_main(self):
+        filename = "examples/comb_tree/comb_tree.py"
+        print('running ' + filename)
+        pipes = subprocess.Popen(['python', filename],
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+        _, errors = pipes.communicate()
+        for error in errors.decode("utf-8").split("\n"):
+            if error:
+                self.assertTrue(("INFO" in error) or ("DEBUG" in error), error)
+
+
+class TestMigenHardwareExamples(unittest.TestCase):
+
+    def test_main(self):
+        filename = "examples/tutorials/migen_hardware_examples.py"
+        print('running ' + filename)
+        pipes = subprocess.Popen(['python', filename],
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+        stdout, stderr = pipes.communicate()
+
+        self.assertEqual(
+            stdout.decode("utf-8"),
+            textwrap.dedent(
+                """\
+                CHECK_SHAPE: reset has lasted exactly 5 clk cycles
+                CHECK_SHAPE: reset has lasted at least 5 clk cycles
+                """
+            )
+        )
+
+        self.assertEqual(stderr.decode("utf-8"), "")
+
+
+if __name__ == '__main__':
+    unittest.main()
