@@ -1,0 +1,1 @@
+from namespace_kube.namespace import getNamespace
