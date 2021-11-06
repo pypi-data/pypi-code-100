@@ -1,0 +1,30 @@
+class frameworkError(Exception):
+    pass
+
+class utilsVersionError(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
+
+class PlayerPathNotValid(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class UnableToWriteToIOFile(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class UndefinedKey(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class ProcessTerminatedExternally(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class InvalidTrackPath(frameworkError):
+    def __init__(self, *args, **kwargs):
+        pass
