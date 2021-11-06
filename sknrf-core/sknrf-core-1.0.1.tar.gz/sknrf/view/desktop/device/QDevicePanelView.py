@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+
+# Form implementation generated from reading ui file '/Users/dylanbespalko/repos/sknrf-core-dev/sknrf/view/desktop/device/src/QDevicePanelView.ui',
+# licensing of '/Users/dylanbespalko/repos/sknrf-core-dev/sknrf/view/desktop/device/src/QDevicePanelView.ui' applies.
+#
+# Created: Fri May 24 12:44:28 2019
+#      by: pyside2-uic  running on PySide2 5.12.1a1
+#
+# WARNING! All changes made in this file will be lost!
+
+from PySide2 import QtCore, QtGui, QtWidgets
+
+class Ui_devicePanelView(object):
+    def setupUi(self, devicePanelView):
+        devicePanelView.setObjectName("devicePanelView")
+        devicePanelView.resize(475, 131)
+        devicePanelView.setFrameShape(QtWidgets.QFrame.WinPanel)
+        devicePanelView.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.horizontalLayout_2 = QtWidgets.QHBoxLayout(devicePanelView)
+        self.horizontalLayout_2.setSpacing(0)
+        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
+        self.verticalLayout = QtWidgets.QVBoxLayout()
+        self.verticalLayout.setSpacing(0)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.menuButton = QtWidgets.QPushButton(devicePanelView)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.menuButton.sizePolicy().hasHeightForWidth())
+        self.menuButton.setSizePolicy(sizePolicy)
+        self.menuButton.setMinimumSize(QtCore.QSize(64, 64))
+        self.menuButton.setMaximumSize(QtCore.QSize(256, 256))
+        font = QtGui.QFont()
+        font.setPointSize(23)
+        self.menuButton.setFont(font)
+        self.menuButton.setText("")
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/PNG/64/rfsource.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.menuButton.setIcon(icon)
+        self.menuButton.setIconSize(QtCore.QSize(50, 50))
+        self.menuButton.setFlat(False)
+        self.menuButton.setObjectName("menuButton")
+        self.verticalLayout.addWidget(self.menuButton)
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.horizontalLayout.setSpacing(0)
+        self.horizontalLayout.setObjectName("horizontalLayout")
+        self.onButton = QtWidgets.QPushButton(devicePanelView)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.onButton.sizePolicy().hasHeightForWidth())
+        self.onButton.setSizePolicy(sizePolicy)
+        self.onButton.setMinimumSize(QtCore.QSize(50, 32))
+        self.onButton.setMaximumSize(QtCore.QSize(50, 32))
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        font.setWeight(75)
+        font.setBold(True)
+        self.onButton.setFont(font)
+        self.onButton.setAutoFillBackground(False)
+        self.onButton.setStyleSheet("QPushButton#onButton {color: black; background-color: grey }")
+        self.onButton.setFlat(False)
+        self.onButton.setObjectName("onButton")
+        self.horizontalLayout.addWidget(self.onButton)
+        self.offButton = QtWidgets.QPushButton(devicePanelView)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.offButton.sizePolicy().hasHeightForWidth())
+        self.offButton.setSizePolicy(sizePolicy)
+        self.offButton.setMinimumSize(QtCore.QSize(50, 32))
+        self.offButton.setMaximumSize(QtCore.QSize(50, 32))
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        font.setWeight(75)
+        font.setBold(True)
+        self.offButton.setFont(font)
+        self.offButton.setAutoFillBackground(False)
+        self.offButton.setStyleSheet("QPushButton#offButton { color: white; background-color: red }")
+        self.offButton.setFlat(False)
+        self.offButton.setObjectName("offButton")
+        self.horizontalLayout.addWidget(self.offButton)
+        self.verticalLayout.addLayout(self.horizontalLayout)
+        self.horizontalLayout_2.addLayout(self.verticalLayout)
+        self.propertyTable = PropertyScrollArea(devicePanelView)
+        self.propertyTable.setObjectName("propertyTable")
+        self.horizontalLayout_2.addWidget(self.propertyTable)
+        self.horizontalLayout_2.setStretch(0, 1)
+        self.horizontalLayout_2.setStretch(1, 4)
+
+        self.retranslateUi(devicePanelView)
+        QtCore.QMetaObject.connectSlotsByName(devicePanelView)
+
+    def retranslateUi(self, devicePanelView):
+        devicePanelView.setWindowTitle(QtWidgets.QApplication.translate("devicePanelView", "Frame", None, -1))
+        self.onButton.setText(QtWidgets.QApplication.translate("devicePanelView", "ON", None, -1))
+        self.offButton.setText(QtWidgets.QApplication.translate("devicePanelView", "OFF", None, -1))
+        self.propertyTable.setToolTip(QtWidgets.QApplication.translate("devicePanelView", "Property Browser", None, -1))
+        self.propertyTable.setWhatsThis(QtWidgets.QApplication.translate("devicePanelView", "The Property Browser Controls Table Properties", None, -1))
+
+from sknrf.widget.propertybrowser.view.base import PropertyScrollArea

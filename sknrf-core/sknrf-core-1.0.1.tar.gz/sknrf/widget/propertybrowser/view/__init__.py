@@ -1,0 +1,33 @@
+
+from qtpropertybrowser import Format, Scale, Domain, PkAvg, BrowserCol
+from qtpropertybrowser import QtProperty, QtBrowserItem
+
+from qtpropertybrowser import QtTreePropertyBrowser, QtGroupBoxPropertyBrowser, QtButtonPropertyBrowser
+from qtpropertybrowser import QtGroupPropertyManager
+from qtpropertybrowser import QtIntPropertyManager, QtBoolPropertyManager
+from qtpropertybrowser import QtDoublePropertyManager, QtComplexPropertyManager
+from qtpropertybrowser import QtTFTensorPropertyManager
+from qtpropertybrowser import QtStringPropertyManager, QtFilePropertyManager
+from qtpropertybrowser import QtDatePropertyManager, QtTimePropertyManager, QtDateTimePropertyManager
+from qtpropertybrowser import QtCharPropertyManager, QtKeySequencePropertyManager
+from qtpropertybrowser import QtLocalePropertyManager
+from qtpropertybrowser import QtPointPropertyManager, QtPointFPropertyManager
+from qtpropertybrowser import QtSizePropertyManager, QtSizeFPropertyManager
+from qtpropertybrowser import QtRectPropertyManager, QtRectFPropertyManager
+from qtpropertybrowser import QtEnumPropertyManager, QtFlagPropertyManager
+from qtpropertybrowser import QtSizePolicyPropertyManager
+from qtpropertybrowser import QtFontPropertyManager, QtColorPropertyManager, QtCursorPropertyManager
+from qtpropertybrowser import QtGroupEditorFactory
+from qtpropertybrowser import QtIntEditFactory, QtSpinBoxFactory, QtSliderFactory, QtScrollBarFactory, QtCheckBoxFactory
+from qtpropertybrowser import QtDoubleEditFactory, QtDoubleSpinBoxFactory, QtComplexEditFactory
+from qtpropertybrowser import QtTFTensorEditFactory
+from qtpropertybrowser import QtLineEditFactory, QtFileEditorFactory
+from qtpropertybrowser import QtDateEditFactory, QtTimeEditFactory, QtDateTimeEditFactory
+from qtpropertybrowser import QtKeySequenceEditorFactory, QtCharEditorFactory
+from qtpropertybrowser import QtLocaleEditorFactory
+from qtpropertybrowser import QtPointEditorFactory, QtPointFEditorFactory
+from qtpropertybrowser import QtSizeEditorFactory, QtSizeFEditorFactory
+from qtpropertybrowser import QtRectEditorFactory, QtRectFEditorFactory
+from qtpropertybrowser import QtEnumEditorFactory, QtFlagEditorFactory
+from qtpropertybrowser import QtSizePolicyEditorFactory
+from qtpropertybrowser import QtFontEditorFactory, QtColorEditorFactory, QtCursorEditorFactory
