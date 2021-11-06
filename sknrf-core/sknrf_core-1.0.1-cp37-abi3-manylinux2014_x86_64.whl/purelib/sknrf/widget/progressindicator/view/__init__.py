@@ -1,0 +1,1 @@
+from qprogressindicator import QProgressIndicator

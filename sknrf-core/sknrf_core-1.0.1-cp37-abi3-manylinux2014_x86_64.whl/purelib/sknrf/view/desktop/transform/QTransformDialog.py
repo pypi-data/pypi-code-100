@@ -1,0 +1,100 @@
+# -*- coding: utf-8 -*-
+
+# Form implementation generated from reading ui file '/Users/dylanbespalko/repos/sknrf-core-dev/sknrf/view/desktop/transform/src/QTransformDialog.ui',
+# licensing of '/Users/dylanbespalko/repos/sknrf-core-dev/sknrf/view/desktop/transform/src/QTransformDialog.ui' applies.
+#
+# Created: Tue Jun  4 09:10:26 2019
+#      by: pyside2-uic  running on PySide2 5.12.1a1
+#
+# WARNING! All changes made in this file will be lost!
+
+from PySide2 import QtCore, QtGui, QtWidgets
+
+class Ui_transformDialog(object):
+    def setupUi(self, transformDialog):
+        transformDialog.setObjectName("transformDialog")
+        transformDialog.resize(824, 362)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.MinimumExpanding)
+        sizePolicy.setHorizontalStretch(16)
+        sizePolicy.setVerticalStretch(9)
+        sizePolicy.setHeightForWidth(transformDialog.sizePolicy().hasHeightForWidth())
+        transformDialog.setSizePolicy(sizePolicy)
+        transformDialog.setSizeGripEnabled(True)
+        transformDialog.setModal(True)
+        self.verticalLayout = QtWidgets.QVBoxLayout(transformDialog)
+        self.verticalLayout.setSpacing(0)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.transformFrame = QtWidgets.QFrame(transformDialog)
+        self.transformFrame.setFrameShape(QtWidgets.QFrame.WinPanel)
+        self.transformFrame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.transformFrame.setObjectName("transformFrame")
+        self.gridLayout = QtWidgets.QGridLayout(self.transformFrame)
+        self.gridLayout.setObjectName("gridLayout")
+        self.transformLabel = QtWidgets.QLabel(self.transformFrame)
+        self.transformLabel.setObjectName("transformLabel")
+        self.gridLayout.addWidget(self.transformLabel, 0, 0, 1, 1)
+        self.transformComboBox = QtWidgets.QComboBox(self.transformFrame)
+        self.transformComboBox.setObjectName("transformComboBox")
+        self.gridLayout.addWidget(self.transformComboBox, 0, 1, 1, 1)
+        self.gridLayout.setColumnStretch(0, 1)
+        self.gridLayout.setColumnStretch(1, 3)
+        self.verticalLayout.addWidget(self.transformFrame)
+        self.previewFrame = QtWidgets.QFrame(transformDialog)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.previewFrame.sizePolicy().hasHeightForWidth())
+        self.previewFrame.setSizePolicy(sizePolicy)
+        self.previewFrame.setFrameShape(QtWidgets.QFrame.WinPanel)
+        self.previewFrame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.previewFrame.setObjectName("previewFrame")
+        self.gridLayout_2 = QtWidgets.QGridLayout(self.previewFrame)
+        self.gridLayout_2.setContentsMargins(0, 0, 0, 7)
+        self.gridLayout_2.setObjectName("gridLayout_2")
+        self.previewLabel = QtWidgets.QLabel(self.previewFrame)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.previewLabel.sizePolicy().hasHeightForWidth())
+        self.previewLabel.setSizePolicy(sizePolicy)
+        self.previewLabel.setStyleSheet("background-color: rgb(255, 255, 255);")
+        self.previewLabel.setText("")
+        self.previewLabel.setScaledContents(False)
+        self.previewLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.previewLabel.setObjectName("previewLabel")
+        self.gridLayout_2.addWidget(self.previewLabel, 0, 0, 1, 1)
+        self.verticalLayout.addWidget(self.previewFrame)
+        self.argumentFrame = QtWidgets.QFrame(transformDialog)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.MinimumExpanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.argumentFrame.sizePolicy().hasHeightForWidth())
+        self.argumentFrame.setSizePolicy(sizePolicy)
+        self.argumentFrame.setFrameShape(QtWidgets.QFrame.WinPanel)
+        self.argumentFrame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.argumentFrame.setObjectName("argumentFrame")
+        self.verticalLayout_2 = QtWidgets.QVBoxLayout(self.argumentFrame)
+        self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        self.transformTable = PropertyScrollArea(self.argumentFrame)
+        self.transformTable.setObjectName("transformTable")
+        self.verticalLayout_2.addWidget(self.transformTable)
+        self.verticalLayout.addWidget(self.argumentFrame)
+        self.buttonBox = QtWidgets.QDialogButtonBox(transformDialog)
+        self.buttonBox.setOrientation(QtCore.Qt.Horizontal)
+        self.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel|QtWidgets.QDialogButtonBox.Ok)
+        self.buttonBox.setObjectName("buttonBox")
+        self.verticalLayout.addWidget(self.buttonBox)
+
+        self.retranslateUi(transformDialog)
+        QtCore.QObject.connect(self.buttonBox, QtCore.SIGNAL("accepted()"), transformDialog.accept)
+        QtCore.QObject.connect(self.buttonBox, QtCore.SIGNAL("rejected()"), transformDialog.reject)
+        QtCore.QMetaObject.connectSlotsByName(transformDialog)
+
+    def retranslateUi(self, transformDialog):
+        transformDialog.setWindowTitle(QtWidgets.QApplication.translate("transformDialog", "Dialog", None, -1))
+        self.transformLabel.setText(QtWidgets.QApplication.translate("transformDialog", "Transform:", None, -1))
+        self.transformTable.setToolTip(QtWidgets.QApplication.translate("transformDialog", "Property Browser", None, -1))
+        self.transformTable.setWhatsThis(QtWidgets.QApplication.translate("transformDialog", "The Property Browser Controls Table Properties", None, -1))
+
+from sknrf.widget.propertybrowser.view.base import PropertyScrollArea
