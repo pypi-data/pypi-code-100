@@ -1,0 +1,30 @@
+# -*- coding: utf-8 -*-
+from setuptools import setup
+
+packages = \
+['sndslib']
+
+package_data = \
+{'': ['*']}
+
+entry_points = \
+{'console_scripts': ['snds = sndslib.cli:main']}
+
+setup_kwargs = {
+    'name': 'sndslib',
+    'version': '0.1.4',
+    'description': 'Process and verify data from SNDS easily',
+    'long_description': "# SNDS LIB\n\n[![Build Status](https://www.travis-ci.com/undersfx/sndslib.svg?branch=master)](https://www.travis-ci.com/undersfx/sndslib) [![codecov](https://codecov.io/gh/undersfx/sndslib/branch/master/graph/badge.svg)](https://codecov.io/gh/undersfx/sndslib) [![Python 3](https://pyup.io/repos/github/undersfx/sndslib/python-3-shield.svg)](https://pyup.io/repos/github/undersfx/sndslib/) [![Updates](https://pyup.io/repos/github/undersfx/sndslib/shield.svg)](https://pyup.io/repos/github/undersfx/sndslib/) [![Total alerts](https://img.shields.io/lgtm/alerts/g/undersfx/sndslib.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/undersfx/sndslib/alerts/) [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/undersfx/sndslib.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/undersfx/sndslib/context:python)\n\nProcess and verify data from Microsoft's Smart Network Data Service (SNDS) API easily.\n\nSNDSLIB is a wrapper around SNDS Automated Data Access API to facilitate fast data process and analysis.\n\n---\n\n## Table of content\n\n- [What is SNDS?](#what-is-snds)\n- [Installation](#installation)\n- [CLI](#cli)\n\t- [Summary of all IPs status](#summary-of-all-ips-status)\n\t- [Individual report of a IP](#individual-report-of-a-ip)\n\t- [List all IPs blocked](#list-all-ips-blocked)\n\t- [List all IPs blocked with rDNS](#list-all-ips-blocked-with-rdns)\n- [Incorporate SNDSLIB CLI](#incorporate-sndslib-cli)\n- [More about SNDS](#more-about-snds)\n\n---\n\n## What is SNDS?\n\nSmart Network Data Service (SNDS) is a platform to monitor data from IPs that send emails to Microsoft's servers.\n\nIf you send a substantial volume of email messages from your IPs, your can get valuable information about IP reputation, possible blocks, spam complaints and spamtraps hits.\n\nFirst, you need to sign up for SNDS, [request access](https://sendersupport.olc.protection.outlook.com/snds/addnetwork.aspx) for your IPs, then enable the [Automates Data Access](https://sendersupport.olc.protection.outlook.com/snds/auto.aspx?wa=wsignin1.0) to recieve your API key.\n\n---\n\n## Installation\n\nSNDSLIB has no external dependencies. It runs just with python 3.6 or higher.\n\n```bash\npip install sndslib\n```\n\nSimple example of library usage:\n\n```python\n    >>> from sndslib import sndslib\n\n    # Connects with snds to get usage data\n    >>> r = sndslib.get_data('mykey')\n\n    # Sndslib can give a summary of the state of all IPs\n    >>> sndslib.summarize(r)\n    {'red': 272, 'green': 710, 'yellow': 852, 'traps': 1298, 'ips': 1834, 'date': '12/31/2019'}\n\n    # even get whole information about a specific IP\n    >>> sndslib.search_ip_status('1.1.1.1', r)\n    {'activity_end': '12/31/2019 7:00 PM',\n    'activity_start': '12/31/2019 10:00 AM',\n    'comments': '',\n    'complaint_rate': '< 0.1%',\n    'data_commands': '1894',\n    'filter_result': 'GREEN',\n    'ip_address': '1.1.1.1',\n    'message_recipients': '1894',\n    'rcpt_commands': '1895',\n    'sample_helo': '',\n    'sample_mailfrom': '',\n    'trap_message_end': '',\n    'trap_message_start': '',\n    'traphits': '0'}\n\n    # Connects with snds to get blocked ranges\n    >>> r = sndslib.get_ip_status('mykey')\n\n    # Sndslib can parse the information and extract all blocked IPs\n    >>> blocked_ips = sndslib.list_blocked_ips(r)\n    >>> print(blocked_ips)\n    ['1.1.1.1', '1.1.1.2']\n\n    # Even get all rdns for these IPs\n    >>> sndslib.list_blocked_ips_rdns(blocked_ips)\n    [{'ip': '1.1.1.1', 'rdns': 'foo.bar.exemple.com'},\n     {'ip': '1.1.1.2', 'rdns': 'foo2.bar.exemple.com'}]\n```\n\n---\n\n## CLI\n\nThis library contains a CLI to facilitate fast operations in the terminal. Here are some examples of their usage:\n\n### Summary of all IPs status\n```bash\nsnds -k 'your-key-here' -s\n```\nExample output:\n```\nDate: 12/31/2020\nIPs:       1915\nGreen:      250\nYellow:    1175\nRed:        490\nTrap Hits:  990\nBlocked:    193\n```\n\n### Individual report of a IP\n```bash\nsnds -k 'your-key-here' -ip '1.1.1.1'\n```\n\nExample output:\n```\nActivity: 1/31/2020 11:59 AM until 1/31/2020 11:59 PM\nIP:         1.1.1.1\nMessages:    183057\nFilter:       GREEN\nComplaint:   < 0.1%\nTrap Hits:        3\n```\n\n### List all IPs blocked\n```bash\nsnds -k 'your-key-here' -l\n```\n\nExample output:\n```\n1.1.1.1\n1.1.1.2\n1.1.1.3\n...\n```\n\n### List all IPs blocked with rDNS\n```bash\nsnds -k 'your-key-here' -r\n```\n\nExample output:\n```\n1.1.1.1;example.domain1.com\n1.1.1.2;example.domain2.com\n1.1.1.3;example.domain3.com\n...\n```\n\n---\n\n## Incorporate SNDSLIB CLI\n\nYou can easily incorporate the sndslib CLI into your own command line tool by using the CLI adapter class:\n\n```python\n    from sndslib import cli\n\n    # ... parse key, date and ip arguments\n\n    # Create a instance of the Cli\n    command = cli.Cli(key, date)\n\n    # to implement -s flag use\n    command.summary()\n\n    # to implement -ips flag use\n    command.ip_data(ip)\n\n    # to implement -l flag use\n    command.list_blocked_ips()\n\n    # to implement -r flag use\n    command.list_blocked_ips_rdns()\n```\n\n---\n\n## More about SNDS\n\nYou can get more information about SNDS features in the Microsoft's official pages for [SNDS](https://sendersupport.olc.protection.outlook.com/snds/FAQ.aspx?wa=wsignin1.0) and [SNDS Automated Data Access](https://sendersupport.olc.protection.outlook.com/snds/auto.aspx).\n",
+    'author': 'undersfx',
+    'author_email': 'undersoft.corp@gmail.com',
+    'maintainer': None,
+    'maintainer_email': None,
+    'url': 'https://github.com/undersfx/sndslib',
+    'packages': packages,
+    'package_data': package_data,
+    'entry_points': entry_points,
+    'python_requires': '>=3.7,<4.0',
+}
+
+
+setup(**setup_kwargs)
