@@ -1,0 +1,36 @@
+from django import template
+from django.conf import settings
+from django.contrib.admin.models import LogEntry
+
+register = template.Library()
+
+@register.simple_tag
+def site_name():
+    return settings.SITE_NAME if hasattr(settings, 'SITE_NAME') else 'FrontAdmin'
+
+@register.inclusion_tag('elements/logo.html')
+def logo(defaut=True):
+    return {
+        'site_name': settings.SITE_NAME if hasattr(settings, 'SITE_NAME') else 'FrontAdmin',
+        'default': defaut
+    }
+
+@register.inclusion_tag('elements/sidebar.html')
+def sidebar():
+    pass
+
+@register.inclusion_tag('elements/warnings_recent_content.html')
+def warnings_recent_content():
+    entries = LogEntry.objects.all().order_by('-id')[:10]
+    return {
+        'log_entries': entries
+    }
+
+@register.inclusion_tag('elements/form.html')
+def simple_form(frontadmin_form):
+    return {
+        'form': frontadmin_form.form,
+        'form_title': frontadmin_form.form_title,
+        'form_submit': frontadmin_form.form_submit,
+        'form_class': frontadmin_form.form_class
+    }
