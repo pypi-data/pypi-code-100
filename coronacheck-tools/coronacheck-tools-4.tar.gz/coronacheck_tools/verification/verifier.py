@@ -1,0 +1,44 @@
+from coronacheck_tools.verification.mobilecore import validate as mobilecore_validate, clearconfig as mobilecore_clearconfig, \
+    readconfig as mobilecore_readconfig
+
+# there's only one strategy at the moment
+# mobilecore: a thin wrapper around the mobilecore validator from the coronacheck.nl app
+strategies = ('mobilecore')
+
+
+def readconfig():
+    """
+    Reads the config of all verifiers into a dict. Currently only mobilecore is supported.
+
+    :return: dict with config parameters
+    """
+
+    return {'mobilecore': mobilecore_readconfig()}
+
+
+def cconfig():
+    """
+    Clears the validators configuration. Please use carefully!
+
+    :return: None
+    """
+
+    mobilecore_clearconfig()
+
+
+def validate_raw(raw: str, strategy='mobilecore', *args, **kwargs):
+    """
+    Validate the RAW data from the QR Code.
+
+    :param raw: RAW data as a str
+    :param strategy: the validator strategy, available: mobilecore default: mobilecore
+    :param args: extra strategy specific parameters (if any)
+    :param kwargs: extra strategy specific parameters (if any)
+    :return: tuple: valid True/False, extra info
+    """
+
+    if strategy.lower() not in strategies:
+        raise ValueError(f'Invalid strategy choose one of: {", ".join(strategies)}')
+
+    if strategy == 'mobilecore':
+        return mobilecore_validate(raw, *args, **kwargs)
