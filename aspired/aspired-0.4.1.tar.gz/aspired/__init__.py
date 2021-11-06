@@ -1,0 +1,20 @@
+from . import image_reduction
+from . import spectral_reduction
+from . import standard_list
+
+__all__ = [
+    'image_reduction',
+    'spectral_reduction',
+    'standard_list',
+    'util',
+]
+
+__author__ = "Marco C Lam", "Robert J Smith"
+__credits__ = [
+    "Iain A Steele", "Paul R McWhirter", "Lukasz Wyrzykowski", "Iair Arcavi"
+]
+__license__ = "BSD 3-Clause License"
+__version__ = "0.4.0"
+__maintainer__ = "Marco C Lam"
+__email__ = "lam@tau.ac.il"
+__status__ = "Production"
