@@ -1,0 +1,185 @@
+from functools import partial
+from itertools import starmap
+from logging import warning
+from os import sched_getaffinity, sysconf
+from re import compile
+from types import MappingProxyType
+from typing import Any, Callable, Iterator, List, Mapping, Optional, Tuple
+
+from pylxd import Client
+from pylxd.models import Container
+from tabulate import tabulate
+
+__all__ = [
+    'print_resources',
+]
+
+
+_DEFAULT_CPU_COUNT = len(sched_getaffinity(0))
+_DEFAULT_MEMORY = sysconf('SC_PAGE_SIZE') * sysconf('SC_PHYS_PAGES')
+_FACTOR_GB = 10 ** -9
+_FACTOR_GIB = 2 ** -30
+_DEFAULT_MEMORY_GB = _DEFAULT_MEMORY * _FACTOR_GB  # gigabytes
+_DEFAULT_MEMORY_GIB = _DEFAULT_MEMORY * _FACTOR_GIB  # gibibytes
+
+_PRINT_HEADERS = ('Container', 'CPU', 'Memory', 'HDD', 'Network', 'Profiles')
+
+_MEMORY_UNIT_MULTIPLICATION_MAP = MappingProxyType({
+    'b': 1,
+    'kib': 2 ** 10,
+    'mib': 2 ** 20,
+    'gib': 2 ** 30,
+    'tib': 2 ** 40,
+    'kb': 10 ** 3,
+    'mb': 10 ** 6,
+    'gb': 10 ** 9,
+    'tb': 10 ** 12,
+})
+
+_MEMORY_PATTERN = compile(
+    r'^\s*(\d+(?:\.\d+)?)\s*(?i:({}))?\s*$'.format(
+        '|'.join(_MEMORY_UNIT_MULTIPLICATION_MAP)
+    )
+)
+
+
+def _format_size(
+    size_gb: Optional[float],
+    gb_unit: str,
+) -> str:
+    """Format memory size in GB to string."""
+    return '{:.2f} {}'.format(size_gb, gb_unit) if size_gb else 'UNKNOWN'
+
+
+def _parse_size_to_gb(
+    memory_size: str,
+    warning_callback: Callable[[str], None],
+    in_gibibytes: bool,
+) -> Optional[float]:
+    """Memory size string parsing to GB units."""
+    try:
+        memory_size, memory_unit = _MEMORY_PATTERN.match(memory_size).groups()
+
+    except (ValueError, AttributeError):
+        warning(warning_callback(memory_size))
+        return
+
+    try:
+        memory_factor = _MEMORY_UNIT_MULTIPLICATION_MAP[memory_unit.lower()]
+
+    except KeyError:
+        warning(warning_callback(memory_size))
+        return
+
+    gb_factor = _FACTOR_GIB if in_gibibytes else _FACTOR_GB
+
+    try:
+        return memory_factor * float(memory_size) * gb_factor
+
+    except (ValueError, TypeError):
+        warning(warning_callback(memory_size))
+
+
+def _iter_disk_devices(
+    container_name: str,
+    devices: Mapping[str, Mapping[str, Any]],
+    in_gibibytes: bool,
+) -> Iterator[Tuple[str, Optional[float]]]:
+    for device in devices.values():
+        if device['type'] != 'disk':
+            continue
+
+        yield device['path'], _parse_size_to_gb(
+            device.get('size', ''),
+            partial(
+                'Unknown disk units {0!r} for {container_name!r}.'.format,
+                container_name=container_name,
+            ),
+            in_gibibytes,
+        )
+
+
+def _iter_resources(
+    containers: List[Container],
+    in_gibibytes: bool,
+) -> Iterator[Tuple[str, ...]]:
+    """Iterate over containers to fetch resources data."""
+    total_memory_gb = 0.0
+    total_disk_gb = 0.0
+
+    gb_unit = 'GiB' if in_gibibytes else 'GB'
+
+    def format_disk(path: str, disk_size_gb: Optional[float]):
+        nonlocal total_disk_gb
+        total_disk_gb += disk_size_gb or 0.0
+        return '{!r}: {}'.format(path, _format_size(disk_size_gb, gb_unit))
+
+    default_memory_gb = (
+        _DEFAULT_MEMORY_GIB if in_gibibytes else _DEFAULT_MEMORY_GB
+    )
+    default_limits_memory_gb = '{} {}'.format(default_memory_gb, gb_unit)
+
+    for container in containers:
+        config = container.expanded_config
+        devices = container.expanded_devices
+
+        container_name = container.name
+        container_status = container.status
+
+        memory_size_gb = _parse_size_to_gb(
+            config.get('limits.memory', default_limits_memory_gb),
+            partial(
+                'Unknown memory units {!r} for {container_name}!r}.'.format,
+                container_name=container_name,
+            ),
+            in_gibibytes,
+        )
+        if container_status.lower() == 'running':
+            total_memory_gb += memory_size_gb or 0.0
+
+        yield (
+            '{} ({})'.format(container_name, container_status),
+            '{} (allowance: {})'.format(
+                config.get('limits.cpu', _DEFAULT_CPU_COUNT),
+                config.get('limits.cpu.allowance', '100%'),
+            ),
+            _format_size(memory_size_gb, gb_unit),
+            '\n'.join(
+                starmap(
+                    format_disk,
+                    _iter_disk_devices(container_name, devices, in_gibibytes),
+                )
+            ),
+            '\n'.join(
+                (
+                    '{}: {}'.format(
+                        device['nictype'],
+                        device['parent'],
+                    )
+                    for device in devices.values()
+                    if device['type'] == 'nic'
+                )
+            ),
+            '\n'.join(container.profiles),
+        )
+
+    yield (
+        '=== SUMMARY ===',
+        '',
+        '{:.2f} {} ({:.2%})'.format(
+            total_memory_gb,
+            gb_unit,
+            total_memory_gb / default_memory_gb,
+        ),
+        '{:.2f} {}'.format(total_disk_gb, gb_unit),
+        '',
+        '',
+    )
+
+
+def print_resources(client: Client, in_gibibytes: bool) -> None:
+    print(tabulate(
+        tuple(_iter_resources(client.containers.all(), in_gibibytes)),
+        _PRINT_HEADERS,
+        tablefmt='grid',
+    ))
